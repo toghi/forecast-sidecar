@@ -193,6 +193,7 @@ components:
           enum:
             - invalid_token
             - bad_request
+            - not_yet_trained
             - model_not_found
             - model_not_ready
             - storage_unavailable
@@ -220,7 +221,11 @@ components:
         application/json:
           schema: { $ref: '#/components/schemas/ErrorResponse' }
     ModelNotFound:
-      description: No model found for (company_id, computed_object_id, model_version)
+      description: |
+        No model found. error="not_yet_trained" when no latest.json exists
+        for the (company_id, computed_object_id) pair (the pair has never
+        been trained); error="model_not_found" when an explicit model_version
+        is requested but does not exist.
       content:
         application/json:
           schema: { $ref: '#/components/schemas/ErrorResponse' }

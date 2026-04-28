@@ -17,6 +17,7 @@ holds no business logic and no database access."
 - Q: Must `ALLOWED_CALLERS` be a non-empty allow-list in production? → A: Required (non-empty) in staging + production; service refuses to start if unset. Local stays open for dev friction.
 - Q: What retention policy applies to old model versions? → A: Keep the 10 most recent versions per `(company, CO)`; trainer prunes older `v{N}/` directories after a successful promotion.
 - Q: What concurrency cap should the trainer queue enforce? → A: `max_concurrent_dispatches = 5` in production, `2` in staging. No per-second rate cap.
+- Q: How does `/forecast` respond when a `(company, CO)` has never been trained? → A: HTTP 404 with `error: "not_yet_trained"`, distinct from `error: "model_not_found"` (which means an explicit `model_version=N` is missing). Both share status 404; the JSON `error` field lets the caller branch UX.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -216,9 +217,14 @@ distinct readiness signal) but not for first-cut functional value, so P2.
   columns.
 - **FR-005**: The service MUST reject requests where the row count of
   `future_features` does not equal `horizon_periods`.
-- **FR-006**: The service MUST distinguish four failure classes with
-  distinct error responses: invalid input, unauthenticated, model-not-found,
-  model-not-ready, and storage-unavailable.
+- **FR-006**: The service MUST distinguish six failure classes with
+  distinct error responses: invalid input (400 `bad_request`),
+  unauthenticated (401 `invalid_token`), no-model-yet for the entire
+  `(company, CO)` pair (404 `not_yet_trained`), explicit version
+  missing (404 `model_not_found`), version exists but not ready (409
+  `model_not_ready`), and storage unreachable (503
+  `storage_unavailable`). The `error` field of the response body MUST
+  carry the machine-readable code regardless of the HTTP status.
 - **FR-007**: The service MUST allow per-period feature overrides via
   `scenario_overrides` and apply each override only to the named period.
   Overriding a feature unknown to the model MUST be rejected.

@@ -85,7 +85,7 @@ Subset of `metadata.json.metrics` that is safe to expose to the caller.
 
 | Field | Type | Notes |
 |---|---|---|
-| `error` | `str` | machine-readable code: `invalid_token`, `bad_request`, `model_not_found`, `model_not_ready`, `storage_unavailable` |
+| `error` | `str` | machine-readable code: `invalid_token`, `bad_request`, `not_yet_trained`, `model_not_found`, `model_not_ready`, `storage_unavailable` |
 | `detail` | `str` | human-readable message |
 | `missing_columns` | `list[str] \| None` | only on `bad_request` for FR-004 |
 | `expected_rows` | `int \| None` | only on FR-005 violation |
