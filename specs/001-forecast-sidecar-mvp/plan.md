@@ -200,7 +200,7 @@ forecast-sidecar/
 │   │   ├── artifact_registry/ # one repo per env
 │   │   ├── cloud_tasks/       # trainer-trigger queue
 │   │   ├── secret_manager/    # secret + accessor binding
-│   │   ├── network/           # VPC connector / Direct VPC + Cloud NAT (mirrors agent-sidecar)
+│   │   ├── network/           # Direct VPC egress + VPC peering + Cloud NAT + Private Google Access (FR-039)
 │   │   └── iam/               # least-privilege roles per FR-026
 │   └── environments/
 │       ├── staging/

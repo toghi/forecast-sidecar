@@ -421,7 +421,7 @@ infra/
 │   ├── artifact_registry/   # one repo per env, immutable tags
 │   ├── cloud_tasks/         # weekly retraining queue
 │   ├── secret_manager/      # secret + secretAccessor at the secret level
-│   ├── network/             # VPC connector / Direct VPC + Cloud NAT (mirrors agent-sidecar)
+│   ├── network/             # Direct VPC egress + VPC peering + Cloud NAT + Private Google Access (FR-039)
 │   └── iam/                 # least-privilege roles per FR-026
 └── environments/
     ├── staging/             # GCP project: {prefix}-forecast-staging
@@ -530,27 +530,27 @@ Terraform with:
 - `ingress = "INTERNAL"` (or `"INTERNAL_AND_CLOUD_LOAD_BALANCING"` only
   if a private internal LB is needed in front of it). The default is
   `INTERNAL` — the simplest path that satisfies FR-038.
-- A **VPC connector** (Serverless VPC Access) or **Direct VPC egress**,
-  depending on what the existing `toolsname-agent-sidecar` uses; the
-  module exposes both knobs and the env's `terraform.tfvars` picks one.
+- **Direct VPC egress** on the Cloud Run service (no Serverless VPC
+  Access connector), bound to a subnet of the forecast project's VPC.
 - The network module also provisions:
+  - **VPC peering** between the forecast project's VPC and the calling
+    backend's VPC, established by the `network` module on both sides.
   - A **Cloud NAT** on the forecast project's VPC for any outbound
     traffic that bypasses Private Google Access.
   - **Private Google Access** on the relevant subnet, so traffic to
     GCS, Secret Manager, and the OIDC JWKS endpoint stays on Google's
     network without traversing NAT.
-  - A peering or Shared-VPC attachment to the calling backend's VPC,
-    chosen to mirror the agent sidecar.
 
 Backend → forecast traffic flow:
 
 ```
 backend Cloud Run (in backend project's VPC)
-    → VPC connector
-    → (Shared VPC | peered VPC) to forecast project's network
-    → Cloud Run service (ingress=INTERNAL)
+    → Direct VPC egress (backend side)
+    → VPC peering to forecast project's network
+    → Cloud Run service (ingress=INTERNAL, Direct VPC egress on this side)
     → OIDC verify (JWKS via Private Google Access)
     → GCS (Private Google Access)
+    → Secret Manager (Private Google Access)
     → response back through the same path
 ```
 
