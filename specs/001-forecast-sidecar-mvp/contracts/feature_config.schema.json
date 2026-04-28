@@ -117,7 +117,7 @@
               "Differences",
               "LocalStandardScaler",
               "LocalMinMaxScaler",
-              "BoxCox"
+              "LocalBoxCox"
             ]
           },
           "args": { "type": "array" }

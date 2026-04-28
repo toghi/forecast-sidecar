@@ -1,0 +1,20 @@
+{
+  "company_id": "00000000-0000-0000-0000-000000000001",
+  "computed_object_id": "00000000-0000-0000-0000-000000000002",
+  "horizon_periods": 12,
+  "future_features": [
+    { "period": "2026-01-01", "active_clients": 32, "bizdev_id": "47" },
+    { "period": "2026-02-01", "active_clients": 33, "bizdev_id": "47" },
+    { "period": "2026-03-01", "active_clients": 33, "bizdev_id": "47" },
+    { "period": "2026-04-01", "active_clients": 34, "bizdev_id": "47" },
+    { "period": "2026-05-01", "active_clients": 35, "bizdev_id": "47" },
+    { "period": "2026-06-01", "active_clients": 35, "bizdev_id": "47" },
+    { "period": "2026-07-01", "active_clients": 36, "bizdev_id": "47" },
+    { "period": "2026-08-01", "active_clients": 37, "bizdev_id": "47" },
+    { "period": "2026-09-01", "active_clients": 38, "bizdev_id": "47" },
+    { "period": "2026-10-01", "active_clients": 38, "bizdev_id": "47" },
+    { "period": "2026-11-01", "active_clients": 39, "bizdev_id": "47" },
+    { "period": "2026-12-01", "active_clients": 40, "bizdev_id": "47" }
+  ],
+  "scenario_overrides": null
+}
