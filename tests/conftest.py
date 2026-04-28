@@ -21,8 +21,8 @@ FIXTURES = Path(__file__).parent / "fixtures"
 def synthetic_series() -> pl.DataFrame:
     """Deterministic 84-month by 3-series long-format frame.
 
-    84 months − max_lag(12) = 72 usable rows per series, comfortably above
-    the ``h * n_windows + 1 = 61`` floor required by
+    84 months minus max_lag(12) = 72 usable rows per series, comfortably
+    above the ``h * n_windows + 1 = 61`` floor required by
     ``PredictionIntervals(n_windows=5, h=12)``.
     """
     rng = np.random.default_rng(seed=42)

@@ -4,9 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from typing import Any
-
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import Depends, HTTPException, Request, status
 from google.auth.transport import requests as google_requests
