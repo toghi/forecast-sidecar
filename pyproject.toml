@@ -1,0 +1,100 @@
+[project]
+name = "forecast-sidecar"
+version = "0.1.0"
+description = "Per-(company, computed_object) time-series forecasting sidecar (MLForecast + LightGBM)."
+readme = "README.md"
+requires-python = ">=3.11,<3.12"
+license = { text = "Proprietary" }
+authors = [{ name = "forecast-sidecar maintainers" }]
+
+dependencies = [
+    "mlforecast>=0.13",
+    "lightgbm>=4.5",
+    "utilsforecast>=0.2",
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "pydantic>=2.7",
+    "pydantic-settings>=2.5",
+    "google-cloud-storage>=2.18",
+    "google-auth>=2.35",
+    "structlog>=24.4",
+    "sentry-sdk>=2.18",
+    "polars>=1.10",
+    "pandas>=2.2",
+    "pyarrow>=18.0",
+    "joblib>=1.4",
+    "click>=8.1",
+    "cachetools>=5.5",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "httpx>=0.27",
+    "freezegun>=1.5",
+    "ruff>=0.7",
+    "mypy>=1.13",
+    "types-cachetools>=5.5",
+    "jsonschema>=4.23",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/forecast_sidecar"]
+
+[tool.uv]
+package = true
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = [".venv", "infra/.terraform", "specs"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "S", "RUF"]
+ignore = [
+    "S101", # asserts allowed (overridden for tests below; explicit for clarity)
+    "S311", # pseudo-random ok in tests/synthetic data
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S105", "S106"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.mypy]
+strict = true
+files = ["src"]
+python_version = "3.11"
+warn_unused_ignores = true
+warn_redundant_casts = true
+
+[[tool.mypy.overrides]]
+module = [
+    "mlforecast.*",
+    "lightgbm.*",
+    "utilsforecast.*",
+    "joblib.*",
+    "google.*",
+    "sentry_sdk.*",
+    "cachetools.*",
+]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+addopts = "-m 'not slow and not gpu' -ra -q"
+testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = [
+    "slow: long-running tests (excluded from pre-commit)",
+    "gpu: tests requiring GPU (excluded by default)",
+    "integration: end-to-end against fakes",
+    "requires_data: tests needing external data fixtures",
+]
