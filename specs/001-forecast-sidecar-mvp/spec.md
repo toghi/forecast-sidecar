@@ -278,6 +278,37 @@ distinct readiness signal) but not for first-cut functional value, so P2.
   model store; the trainer identity MUST hold write access. No identity may
   hold more privilege than its role requires.
 
+**Documentation**
+
+- **FR-027**: The repository MUST contain a `README.md` at the repo root
+  covering, at minimum: project purpose, technology stack, repository
+  layout, local development (install, run service, run trainer, run
+  tests), deployment overview, and the public-contract pointers (HTTP
+  contract, training-CLI contract, feature-config schema). The README MUST
+  be discoverable as the landing page on the source-host (e.g. GitHub).
+- **FR-028**: The repository MUST contain an architecture document at
+  `docs/architecture.md` covering, at minimum: a system-context diagram
+  showing the calling backend, this service, the training job, and
+  durable storage; the request lifecycle for an inference call (auth →
+  cache → load → predict → respond); the training-job lifecycle
+  (download → validate → fit → calibrate → upload → atomic promote); the
+  artifact storage layout and atomic-promotion contract; the in-memory
+  cache semantics (size, TTL, latest-pointer resolution); the
+  authentication and identity model; how the constitution's five
+  principles are realized in the code; and links to the formal contracts
+  (OpenAPI, training CLI, feature-config schema).
+- **FR-029**: The `README.md` MUST link to `docs/architecture.md` from a
+  prominent section (e.g. "Architecture" near the top, or a top-level
+  table-of-contents entry). The link MUST be a relative-path link so it
+  works on the source-host browser and on local clones.
+- **FR-030**: Both documents MUST be kept in sync with code: any pull
+  request that changes the public HTTP contract, the training-CLI
+  contract, the artifact storage layout, the authentication model, or the
+  cache semantics MUST update `docs/architecture.md` (and `README.md` if
+  the change is user-visible) in the same PR. Pull requests violating
+  this rule MUST be flagged by reviewers and not merged until the docs
+  are updated.
+
 ### Key Entities
 
 - **Model artifact**: a self-contained, persisted forecasting model for one
@@ -329,6 +360,14 @@ distinct readiness signal) but not for first-cut functional value, so P2.
 - **SC-011**: The end-to-end integration test from the calling Go API
   against a deployed instance passes on every pull request that touches
   this service.
+- **SC-012**: A new contributor can go from a fresh clone to a running
+  local service plus a trained sample model in under 15 minutes by
+  following only `README.md` and the documents it links to (no tribal
+  knowledge required).
+- **SC-013**: `README.md` and `docs/architecture.md` both exist on
+  `main`, the README contains a working relative link to the
+  architecture document, and CI fails any pull request that breaks that
+  link.
 
 ## Assumptions
 

@@ -128,10 +128,13 @@ forecast-sidecar/
 ├── uv.lock                    # locked dependency graph (committed)
 ├── Dockerfile                 # multi-stage: uv → slim runtime; ENTRYPOINT [], CMD configurable
 ├── .dockerignore
-├── README.md                  # stack, layout, local dev, deploy, contract (acceptance §14.5)
+├── README.md                  # FR-027: stack, layout, local dev, deploy, contract pointers; links to docs/architecture.md
+├── docs/
+│   └── architecture.md        # FR-028: system-context diagram, request + training lifecycles, storage/cache/auth, constitution mapping, contract links
 ├── .github/workflows/
 │   ├── ci.yml                 # uv sync && ruff && mypy && pytest
-│   └── deploy.yml             # build → Artifact Registry → Cloud Run service + Job
+│   ├── deploy.yml             # build → Artifact Registry → Cloud Run service + Job
+│   └── docs.yml               # FR-029/SC-013: relative-link check (e.g. lychee) on README + docs/
 ├── .pre-commit-config.yaml    # ruff, mypy, pytest -m "not slow and not gpu"
 ├── configs/
 │   └── lightgbm_defaults.yaml # default LGBMRegressor params (overridable per feature_config)
