@@ -180,18 +180,22 @@ def run_fit_pipeline(
         num_threads=1,
         **mlf_kwargs,
     )
-    mlf.fit(
-        df,
-        static_features=static_features,
-        prediction_intervals=PredictionIntervals(n_windows=n_windows, h=h),
-    )
-
+    # Run CV first for metrics; mlforecast.cross_validation does its own
+    # internal fits on truncated data and leaves the model in an unusable
+    # state for downstream predict calls.
     cv_df = mlf.cross_validation(
         df=df,
         n_windows=n_windows,
         h=h,
         static_features=static_features,
         level=[80, 95],
+    )
+    # Then fit on the full data + register conformal intervals for the
+    # production model that will be joblib-dumped + served.
+    mlf.fit(
+        df,
+        static_features=static_features,
+        prediction_intervals=PredictionIntervals(n_windows=n_windows, h=h),
     )
 
     model_col = next(
