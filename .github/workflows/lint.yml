@@ -1,0 +1,39 @@
+# GitHub Actions: lint workflow.
+# Per-job set lands incrementally (Phase 8 task list T070, T085, T087);
+# this file currently carries only the docs:link-check job from
+# FR-029 / SC-013. Other jobs (ruff, mypy, gitleaks, terraform-fmt,
+# env-contract, terraform-secrets-check) join here.
+
+name: lint
+
+on:
+  pull_request:
+    paths:
+      - "**/*.md"
+      - ".lychee.toml"
+      - ".github/workflows/lint.yml"
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  docs-link-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restore lychee cache
+        uses: actions/cache@v4
+        with:
+          path: .lycheecache
+          key: lychee-${{ github.run_id }}
+          restore-keys: lychee-
+
+      - name: Run lychee on README + docs/ + specs/
+        uses: lycheeverse/lychee-action@v2
+        with:
+          args: --config .lychee.toml README.md docs/ specs/
+          fail: true

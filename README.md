@@ -129,11 +129,12 @@ Three environments, all owned by Terraform:
 | Staging | Cloud Run + GCS in `{prefix}-forecast-staging` | Secret Manager | backend's VPC only |
 | Production | Cloud Run + GCS in `{prefix}-forecast-production` | Secret Manager | backend's VPC only |
 
-CI/CD is GitLab CI/CD ([`.gitlab-ci.yml`](.gitlab-ci.yml) + the includes in
-[`ci/`](ci/)). Stages: `lint → test → build → iac-validate → deploy:staging
-→ iac-apply:production → deploy:production → drift-check`. Merges to `main`
-auto-deploy to staging; production is gated on a `vX.Y.Z` tag plus manual
-approval.
+CI/CD is GitHub Actions under [`.github/workflows/`](.github/workflows/):
+`lint`, `test`, `build`, `iac`, `deploy-staging` (auto on push to `main`),
+`deploy-production` (manual on `vX.Y.Z` tag, gated by GitHub Environment
+required reviewers), `drift-check` (scheduled daily). Authentication to
+GCP uses Workload Identity Federation — no long-lived service-account
+JSON keys.
 
 ## Contracts
 

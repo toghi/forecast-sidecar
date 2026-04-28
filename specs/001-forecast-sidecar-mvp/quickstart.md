@@ -76,7 +76,7 @@ example file is honored only because `EXPECTED_AUDIENCE` resolves to
 `http://localhost:*` and `LOG_LEVEL=debug` — the same gate that
 prevents the bypass from being usable in any cloud env.
 
-## 5. Working on infrastructure (Terraform + GitLab CI)
+## 5. Working on infrastructure (Terraform + GitHub Actions)
 
 ```bash
 cd infra/environments/staging
@@ -91,10 +91,12 @@ you should expect to run. Modules live in `infra/modules/` and are
 shared between `staging` and `production` — change a module, both envs'
 `plan` will move on the next CI run.
 
-The full pipeline (`.gitlab-ci.yml`) defines: `lint`, `test`, `build`,
-`iac-validate`, `deploy:staging` (auto on `main`), `iac-apply:production`
-(manual, tag-gated), `deploy:production` (manual, tag-gated). See
-`ci/*.gitlab-ci.yml` for stage definitions.
+The full pipeline lives under `.github/workflows/`: `lint.yml`,
+`test.yml`, `build.yml`, `iac.yml`, `deploy-staging.yml` (auto on push
+to `main`), `deploy-production.yml` (manual, `vX.Y.Z` tag-gated via a
+GitHub Environment with required reviewers), `drift-check.yml`
+(scheduled). Authentication to GCP is via Workload Identity Federation
+(no JSON keys).
 
 ## 6. Where things live
 
@@ -107,7 +109,7 @@ The full pipeline (`.gitlab-ci.yml`) defines: `lint`, `test`, `build`,
 - Model code: [src/forecast_sidecar/model/](../../src/forecast_sidecar/model/)
 - Local stack: [compose.yaml](../../compose.yaml), [docker/](../../docker/)
 - Infra: [infra/modules/](../../infra/modules/), [infra/environments/](../../infra/environments/)
-- CI/CD: [.gitlab-ci.yml](../../.gitlab-ci.yml), [ci/](../../ci/)
+- CI/CD: [.github/workflows/](../../.github/workflows/)
 - Env contract: [.env.example](../../.env.example)
 - Feature config schema: [contracts/feature_config.schema.json](contracts/feature_config.schema.json)
 - HTTP contract: [contracts/openapi.yaml](contracts/openapi.yaml)
