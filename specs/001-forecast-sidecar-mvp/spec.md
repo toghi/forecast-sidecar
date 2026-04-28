@@ -19,6 +19,10 @@ holds no business logic and no database access."
 - Q: What concurrency cap should the trainer queue enforce? → A: `max_concurrent_dispatches = 5` in production, `2` in staging. No per-second rate cap.
 - Q: How does `/forecast` respond when a `(company, CO)` has never been trained? → A: HTTP 404 with `error: "not_yet_trained"`, distinct from `error: "model_not_found"` (which means an explicit `model_version=N` is missing). Both share status 404; the JSON `error` field lets the caller branch UX.
 
+### Session 2026-04-29
+
+- Q: Which CI/CD platform should the pipeline run on? → A: **GitHub Actions** (reverses the earlier "GitLab CI/CD" answer from 2026-04-28). Repository is hosted on GitHub; CI/CD is GitHub Actions workflows under `.github/workflows/`. All references to `.gitlab-ci.yml`, GitLab masked variables, GitLab protected environments, and merge requests are replaced with `.github/workflows/*.yml`, GitHub repository / environment secrets, GitHub Environments with required reviewers, and pull requests respectively.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - On-Demand Forecast for a Computed Object (Priority: P1)
@@ -349,21 +353,23 @@ distinct readiness signal) but not for first-cut functional value, so P2.
   Local, staging, and production MUST share identical service-side code,
   configuration schema, and contracts; they differ only in scale,
   region, secrets, bucket names, and resource quotas.
-- **FR-033**: CI/CD MUST be defined in a `.gitlab-ci.yml` file at the repo
-  root, executed by GitLab CI/CD. The pipeline MUST include, at minimum,
-  these stages in order: `lint`, `test`, `build` (container image),
-  `iac-validate` (`terraform fmt -check`, `terraform validate`,
-  `terraform plan`), `deploy:staging`, `iac-apply:production`,
-  `deploy:production`.
-- **FR-034**: Every merge request MUST run `lint`, `test`, `build`, and
-  `iac-validate` and MUST block on any of those stages failing. The
+- **FR-033**: CI/CD MUST be defined as **GitHub Actions** workflows
+  under `.github/workflows/` at the repo root. Workflows MUST cover, at
+  minimum: `lint` (ruff, mypy, gitleaks, terraform fmt, lychee link
+  check), `test` (pytest), `build` (container image to Artifact
+  Registry), `iac-validate` (`terraform fmt -check`, `terraform
+  validate`, `terraform plan`), `deploy-staging`, `iac-apply-production`,
+  `deploy-production`, and a scheduled `drift-check`.
+- **FR-034**: Every pull request MUST run `lint`, `test`, `build`, and
+  `iac-validate` and MUST block on any of those workflows failing
+  (enforced via GitHub branch-protection required-status-checks). The
   `terraform plan` output for both staging and production MUST be
-  attached to the merge request as a job artifact so reviewers can see
-  the infrastructure diff.
+  uploaded as a workflow artifact so reviewers can see the
+  infrastructure diff.
 - **FR-035**: Merges to the default branch MUST automatically deploy to
   staging (idempotent re-deploy is acceptable). Production deploy MUST
-  be a manual job in the pipeline, gated on (a) a release tag matching
-  `vX.Y.Z` and (b) explicit operator approval in GitLab. Production
+  be gated on (a) a release tag matching `vX.Y.Z` and (b) explicit
+  reviewer approval on a GitHub `production` Environment. Production
   deploy MUST NOT run automatically on merges.
 - **FR-036**: Configuration values MUST be supplied per environment
   according to this strict source map; no other source is permitted:
@@ -380,8 +386,9 @@ distinct readiness signal) but not for first-cut functional value, so P2.
     bucket name, log level) MUST be set on the Cloud Run resource by
     Terraform.
   Secrets MUST NOT appear in Terraform source, in committed files, in
-  Terraform plan output, in container images, or in CI logs (CI vars
-  used to bootstrap Secret Manager MUST be GitLab masked + protected).
+  Terraform plan output, in container images, or in CI logs (GitHub
+  Actions secrets used to bootstrap Secret Manager or to authenticate
+  Terraform MUST be repository or environment-scoped, never echoed).
   Terraform state itself MUST live in a private GCS bucket with object
   versioning enabled, one state-bucket per environment.
 - **FR-037**: The local environment MUST NOT require any GCP credentials
@@ -507,7 +514,7 @@ distinct readiness signal) but not for first-cut functional value, so P2.
   Terraform's state. Drift (resources that Terraform did not create or
   that someone modified out of band) is detected by a scheduled
   `terraform plan` job and surfaced as a CI failure within 24 hours.
-- **SC-016**: A merge request that passes review reaches staging within
+- **SC-016**: A pull request that passes review reaches staging within
   10 minutes of merge to the default branch. A tagged release reaches
   production within 15 minutes of operator approval.
 - **SC-017**: No secret value (Sentry DSN, allow-list payload, any other
@@ -546,15 +553,15 @@ distinct readiness signal) but not for first-cut functional value, so P2.
   `toolsname-agent-sidecar` (Shared VPC or VPC peering between the
   backend project and the forecast project, plus Cloud NAT for any
   outbound not covered by Private Google Access). Repository is hosted
-  on GitLab; CI/CD is GitLab CI/CD with `terraform plan` on every MR and
-  a manual, tag-gated production deploy.
+  on GitHub; CI/CD is GitHub Actions with `terraform plan` on every PR
+  and a manual, tag-gated production deploy via a GitHub Environment.
 - **Configuration sourcing**: local reads from `.env` (gitignored;
   `.env.example` committed); staging and production read non-secrets
   from Terraform-managed Cloud Run env vars and read secrets from
   Google Secret Manager via the Cloud Run Secret integration. No env
-  variable in a cloud environment is set from a GitLab CI variable at
-  runtime — CI vars are used only to bootstrap Secret Manager entries
-  and to authenticate Terraform.
+  variable in a cloud environment is set from a GitHub Actions secret
+  at runtime — Actions secrets are used only to authenticate Terraform
+  + the GCP service account that bootstraps Secret Manager entries.
 - **Caller is the broker**: the calling Go API is responsible for (a)
   computing future features (lags, encodings) before invoking inference,
   (b) staging history and feature config to object storage before
@@ -616,7 +623,9 @@ the defaults below and the planning phase can revisit if needed:
   Terraform `infra/environments/{staging,production}/` invokes shared
   modules in `infra/modules/` against the matching project.
 - **Production deploy gate**: a tag matching `vX.Y.Z` plus explicit
-  manual approval in GitLab. No auto-deploy to production from `main`.
+  reviewer approval on a GitHub `production` Environment (with
+  required reviewers configured). No auto-deploy to production from
+  `main`.
 - **Network topology**: Direct VPC egress on Cloud Run + VPC peering
   with the calling backend's VPC + Cloud NAT for any non-Google
   outbound + Private Google Access for GCS / Secret Manager / OIDC
