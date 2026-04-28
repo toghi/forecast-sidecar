@@ -1,0 +1,162 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forecast-sidecar.toolsname/contracts/feature_config.schema.json",
+  "title": "Per-(company, computed_object) Feature Configuration",
+  "description": "Declares the inputs, transformations, and model hyperparameters for one trainable forecasting model. Produced by the calling Go API; consumed by the trainer.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "freq",
+    "target",
+    "horizon",
+    "min_history_periods",
+    "lags",
+    "gap_policy",
+    "lightgbm_params",
+    "calibration"
+  ],
+  "properties": {
+    "freq": {
+      "type": "string",
+      "description": "pandas-style frequency alias",
+      "enum": ["D", "W-MON", "W-SUN", "MS", "M", "QS", "Q", "AS", "A", "H"]
+    },
+    "target": {
+      "type": "string",
+      "description": "Name of the target column in the history CSV",
+      "minLength": 1
+    },
+    "horizon": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 60,
+      "description": "Default forecast horizon in periods; conformal calibration uses this h"
+    },
+    "min_history_periods": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Minimum periods required per series; trainer refuses below this (constitution III)"
+    },
+    "static_features": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true,
+      "default": []
+    },
+    "historic_exog": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true,
+      "default": []
+    },
+    "future_exog": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true,
+      "default": [],
+      "description": "Columns the inference caller must provide at prediction time"
+    },
+    "categorical_features": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true,
+      "default": []
+    },
+    "lags": {
+      "type": "array",
+      "items": { "type": "integer", "minimum": 1 },
+      "uniqueItems": true
+    },
+    "lag_transforms": {
+      "type": "object",
+      "description": "Map from lag (as string key) to a list of transforms",
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name"],
+          "properties": {
+            "name": {
+              "type": "string",
+              "enum": [
+                "rolling_mean",
+                "rolling_std",
+                "rolling_min",
+                "rolling_max",
+                "expanding_mean",
+                "ewm_mean"
+              ]
+            },
+            "window_size": { "type": "integer", "minimum": 1 },
+            "alpha": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 }
+          }
+        }
+      },
+      "default": {}
+    },
+    "date_features": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["month", "quarter", "year", "dayofweek", "dayofyear", "week"]
+      },
+      "uniqueItems": true,
+      "default": []
+    },
+    "target_transforms": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "enum": [
+              "Differences",
+              "LocalStandardScaler",
+              "LocalMinMaxScaler",
+              "BoxCox"
+            ]
+          },
+          "args": { "type": "array" }
+        }
+      },
+      "default": []
+    },
+    "gap_policy": {
+      "type": "string",
+      "enum": ["error", "drop", "impute_zero", "impute_ffill"],
+      "default": "error"
+    },
+    "lightgbm_params": {
+      "type": "object",
+      "description": "Overlaid on configs/lightgbm_defaults.yaml; deterministic/seed/num_threads always set by trainer code",
+      "properties": {
+        "n_estimators":     { "type": "integer", "minimum": 1 },
+        "learning_rate":    { "type": "number", "exclusiveMinimum": 0 },
+        "num_leaves":       { "type": "integer", "minimum": 2 },
+        "max_depth":        { "type": "integer" },
+        "min_data_in_leaf": { "type": "integer", "minimum": 1 },
+        "objective":        { "type": "string", "enum": ["regression", "regression_l1", "tweedie", "huber"] },
+        "metric":           { "type": "string" },
+        "verbosity":        { "type": "integer" }
+      },
+      "additionalProperties": false
+    },
+    "calibration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["n_windows"],
+      "properties": {
+        "n_windows": {
+          "type": "integer",
+          "minimum": 5,
+          "default": 10,
+          "description": "Number of rolling-origin windows for conformal calibration"
+        }
+      }
+    }
+  }
+}
