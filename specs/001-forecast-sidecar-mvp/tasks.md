@@ -29,7 +29,7 @@ Single project, src layout (per [plan.md](plan.md) §Project Structure):
 - Configs: `configs/`
 - Local stack: `compose.yaml`, `docker/`
 - Infra: `infra/{modules,environments/{staging,production}}/`
-- CI: `.gitlab-ci.yml`, `ci/`
+- CI: `.github/workflows/`
 - Docs: `README.md`, `docs/`
 
 ---
@@ -194,7 +194,7 @@ Single project, src layout (per [plan.md](plan.md) §Project Structure):
 - [X] T060 [P] Author `README.md` per the section order in research R11 (summary; stack; layout; **Architecture** section linking to `docs/architecture.md`; local development; deployment; contracts; constitution pointer)
 - [X] T061 [P] Author `docs/architecture.md` per research R11's 8-section structure (system context, request lifecycle, training lifecycle, storage layout + atomic-promotion contract, cache semantics, auth & identity model, constitution → code map, out-of-scope), using Mermaid for the three diagrams
 - [X] T062 [P] Create `.lychee.toml` with relative-link checking on `README.md`, `docs/`, `specs/` and an external-link allow-list (Nixtla, microsoft/LightGBM, FastAPI, GCP docs) (FR-029, SC-013)
-- [X] T063 [P] Create `ci/lint.gitlab-ci.yml` `docs:link-check` job invoking `lycheeverse/lychee-action@v2`
+- [X] T063 [P] Create `.github/workflows/lint.yml` `docs:link-check` job invoking `lycheeverse/lychee-action@v2` (joined by ruff/mypy/gitleaks/terraform-fmt jobs in T070)
 
 **Checkpoint**: README opens to the architecture doc with one click; lychee CI fails any MR that breaks an internal link.
 
@@ -202,7 +202,7 @@ Single project, src layout (per [plan.md](plan.md) §Project Structure):
 
 ## Phase 8: Operations & Infrastructure Deliverables (FR-031 → FR-043, SC-014 → SC-020)
 
-**Purpose**: Container, local stack, GitLab CI/CD pipeline, and Terraform modules + envs that make the service deployable to staging and production.
+**Purpose**: Container, local stack, GitHub Actions CI/CD pipeline, and Terraform modules + envs that make the service deployable to staging and production.
 
 ### Container + local stack
 
@@ -212,14 +212,16 @@ Single project, src layout (per [plan.md](plan.md) §Project Structure):
 - [ ] T067 Create `compose.yaml` (FR-032, FR-037, SC-014) with services: `sidecar` (build .; ports 8080:8080; env_file .env; depends_on fake-gcs healthy), `trainer` (build .; profiles ["train"]; uses trainer entrypoint), `fake-gcs` (image `fsouza/fake-gcs-server`; ports 4443:4443; healthcheck via `/storage/v1/b`); `seed` one-shot service that runs `docker/fake-gcs/seed.sh` after fake-gcs is healthy
 - [ ] T068 [P] Create `.gitleaks.toml` with default rules + an allow-list path for `tests/fixtures/`
 
-### GitLab CI/CD pipeline
+### GitHub Actions CI/CD pipeline
 
-- [ ] T069 Create top-level `.gitlab-ci.yml`: declares stages `lint test build iac-validate deploy:staging iac-apply:production deploy:production drift-check`; `include:` the files in `ci/`; default workflow rules (run on MR, on `main` push, on tag push)
-- [ ] T070 [P] Create `ci/lint.gitlab-ci.yml`: jobs `ruff`, `mypy`, `gitleaks`, `terraform-fmt`, `lychee` (T063 lives here)
-- [ ] T071 [P] Create `ci/test.gitlab-ci.yml`: jobs `pytest:fast` (default markers, runs on every MR) and `pytest:slow` (markers `slow or integration`, runs on `main` and tags); both `uv run pytest` with junit-XML artifact upload
-- [ ] T072 [P] Create `ci/build.gitlab-ci.yml`: `build:image` uses Docker Buildx, builds `--build-arg GIT_SHA=$CI_COMMIT_SHA`, pushes to staging Artifact Registry on every pipeline; on tag pipelines also pushes to production Artifact Registry
-- [ ] T073 [P] Create `ci/iac.gitlab-ci.yml`: jobs `iac:fmt-check`, `iac:validate`, `iac:plan:staging`, `iac:plan:production` (each `cd infra/environments/<env> && terraform init -backend-config=... && terraform plan -out=plan.tfplan && terraform show -json plan.tfplan > plan.json`); upload `plan.tfplan` + `plan.json` as job artifacts so reviewers see the infra diff (FR-034)
-- [ ] T074 [P] Create `ci/deploy.gitlab-ci.yml`: `deploy:staging` (on `main`, runs `terraform apply -auto-approve` on staging then `gcloud run deploy` + `gcloud run jobs update`), `iac-apply:production` (manual, `rules: - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/`, `environment: production`), `deploy:production` (manual, after iac-apply, same rules), `drift-check` (`schedule` + `terraform plan -detailed-exitcode` on both envs; non-zero exit → failure → Sentry alert)
+- [ ] T069 Configure GitHub repository: branch protection on `main` (required PR review, required status checks `lint`/`test`/`build`/`iac`, no force-push), GitHub Environments `staging` (no required reviewers) and `production` (required reviewers + deployment branch rule restricting to `v*` tags), Workload Identity Federation between this repo and the GCP project (one provider per env)
+- [ ] T070 [P] Create `.github/workflows/lint.yml`: jobs `ruff`, `mypy`, `gitleaks`, `terraform-fmt`, `lychee` (the `docs:link-check` job from T063 joins this file). Triggers: `pull_request` (paths `**/*.py`, `**/*.tf`, `**/*.md`), `push: main`, `tag: v*`
+- [ ] T071 [P] Create `.github/workflows/test.yml`: `pytest-fast` (default markers; runs on `pull_request`) and `pytest-full` (markers `slow or integration`; runs on `push: main` and `tag: v*`); both `uv run pytest` with junit XML uploaded via `actions/upload-artifact@v4`
+- [ ] T072 [P] Create `.github/workflows/build.yml`: Docker Buildx, `--build-arg GIT_SHA=${{ github.sha }}`, OIDC auth via `google-github-actions/auth@v2` (Workload Identity Federation, no SA JSON key), pushes to staging Artifact Registry on every pipeline; on `tag: v*` also pushes to production Artifact Registry
+- [ ] T073 [P] Create `.github/workflows/iac.yml`: `iac-fmt-check`, `iac-validate`, `iac-plan-staging`, `iac-plan-production` (each `terraform init -backend-config=... && terraform plan -out=plan.tfplan && terraform show -json plan.tfplan > plan.json`); upload `plan.tfplan` + `plan.json` via `actions/upload-artifact@v4` so reviewers see the infra diff (FR-034). Triggers: `pull_request` paths-filtered to `infra/**`
+- [ ] T074a [P] Create `.github/workflows/deploy-staging.yml`: `deploy-staging` job runs on `push: main` (after `lint`/`test`/`build`/`iac` succeed); `terraform apply -auto-approve` on staging + `gcloud run deploy` + `gcloud run jobs update`; uses GitHub `environment: staging`
+- [ ] T074b [P] Create `.github/workflows/deploy-production.yml`: `deploy-production` job runs on `push: tag v*` after staging deploy succeeds; `terraform apply` (production) + `gcloud run deploy --image=<production-tag>` + `gcloud run jobs update`; uses GitHub `environment: production` (required reviewers gate the run; FR-035, SC-016)
+- [ ] T074c [P] Create `.github/workflows/drift-check.yml`: `schedule` (cron, daily) + `workflow_dispatch`; `terraform plan -detailed-exitcode` on both envs; non-zero exit → workflow failure → Sentry alert (SC-015)
 
 ### Terraform modules
 
@@ -239,9 +241,9 @@ Single project, src layout (per [plan.md](plan.md) §Project Structure):
 
 ### CI-side compliance checks
 
-- [ ] T085 [P] Add `ci/lint.gitlab-ci.yml` `env-contract` job that runs a small `tests/contract/test_env_contract.py` introspecting `Settings.model_fields` and asserting every field has a matching `KEY=` line in `.env.example` (SC-020)
-- [ ] T086 [P] Add `ci/test.gitlab-ci.yml` `external-probe` scheduled job that resolves the staging and production `*.run.app` hostnames from the public internet and asserts the request fails before TLS terminates (SC-018)
-- [ ] T087 [P] Add `ci/lint.gitlab-ci.yml` `terraform-secrets-check` job that fails the pipeline if any Cloud Run env binding in either env's `terraform plan` JSON has a plaintext value where a `secret_key_ref` is expected (SC-019)
+- [ ] T085 [P] Add `env-contract` job to `.github/workflows/lint.yml` that runs `tests/contract/test_env_contract.py` introspecting `Settings.model_fields` and asserting every field has a matching `KEY=` line in `.env.example` (SC-020)
+- [ ] T086 [P] Create `.github/workflows/external-probe.yml` (`schedule`, daily) that resolves the staging + production `*.run.app` hostnames from the runner (public internet) and asserts the request fails before TLS terminates (SC-018)
+- [ ] T087 [P] Add `terraform-secrets-check` job to `.github/workflows/lint.yml` that fails the workflow if any Cloud Run env binding in either env's `terraform plan` JSON has a plaintext value where a `secret_key_ref` is expected (SC-019)
 
 **Checkpoint**: From a fresh clone, `docker compose up` produces a callable `/forecast` in under 5 minutes (SC-014); MR pipeline lint+test+build+iac-validate green; merge to main deploys to staging; tag + manual approval deploys to production.
 
@@ -256,8 +258,8 @@ Single project, src layout (per [plan.md](plan.md) §Project Structure):
 - [ ] T090 [P] Performance assertion in `tests/integration/test_perf_train.py` (marker `slow`): full training run on synthetic 24mo × 5 series ≤ 60 s (SC-006)
 - [ ] T091 [P] Coverage-band sweep in `tests/integration/test_coverage_band.py` (marker `slow`): trains 10 distinct synthetic series, asserts 80%-interval empirical coverage ∈ [0.75, 0.85] for ≥ 9/10 and 95%-interval ∈ [0.92, 0.97] for ≥ 9/10 (SC-003, SC-004)
 - [ ] T092 [P] End-to-end quickstart validation in `tests/integration/test_quickstart.py` (marker `slow`): runs the exact commands from `specs/001-forecast-sidecar-mvp/quickstart.md` §3 inside compose and asserts the documented outcome (SC-012, SC-014)
-- [ ] T093 Configure GitLab "protected environments" for `production` (manual approver list) and "protected branches" for `main` (no force-push, only-merge) — captured as a runbook entry in `docs/architecture.md` (T061) since it's not Terraform-able
-- [ ] T094 Configure scheduled `drift-check` pipeline in GitLab (24h cadence) referenced by T074
+- [ ] T093 Confirm GitHub configuration matches T069 (branch protection on `main`; `staging`/`production` Environments; Workload Identity Federation provider) — captured as a runbook entry in `docs/architecture.md` since it's not Terraform-able from inside this repo
+- [ ] T094 Verify `.github/workflows/drift-check.yml` schedule (T074c) is firing in production and surfacing failures correctly
 - [ ] T095 [P] Add `CHANGELOG.md` skeleton with the v0.1.0 entry covering this MVP
 - [ ] T096 Run `lychee` over the full repo and fix any broken internal links surfaced
 - [ ] T097 Run `gitleaks detect --redact -v` over the full repo and remove any incidental leaks (also verifies SC-017 baseline)
@@ -352,7 +354,7 @@ With 3 developers post-Foundational:
 
 - Dev A: US1 (T036–T042) → US3 (T054–T056)
 - Dev B: US2 (T043–T053) → US4 (T057–T059)
-- Dev C: Phase 8 Terraform + GitLab CI scaffolding (T064–T084) — can scaffold while US1/US2 are in flight; smoke-tests against the MVP image once it builds.
+- Dev C: Phase 8 Terraform + GitHub Actions scaffolding (T064–T084) — can scaffold while US1/US2 are in flight; smoke-tests against the MVP image once it builds.
 
 Documentation (Phase 7) is one engineer-day at the end of MVP and is a natural single-owner task.
 

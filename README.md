@@ -29,7 +29,7 @@ point + 80%/95% conformal forecasts.
 | Env | `uv` (locked deps + virtualenv) |
 | Local | Docker Compose + `fake-gcs-server` |
 | Infra | Terraform on GCP (Cloud Run service + Job, GCS, Cloud Tasks, Secret Manager, peered VPC) |
-| CI/CD | GitLab CI/CD |
+| CI/CD | GitHub Actions |
 
 ## Repository layout
 
@@ -54,7 +54,7 @@ forecast-sidecar/
 ├── configs/                # lightgbm_defaults.yaml
 ├── docs/architecture.md    # diagrams + lifecycles + constitution → code map
 ├── infra/                  # Terraform modules + per-env (staging/production)
-├── ci/                     # GitLab CI/CD includes
+├── .github/workflows/      # GitHub Actions (lint, test, build, iac, deploy)
 ├── docker/                 # entrypoints, fake-gcs seed
 ├── compose.yaml            # local stack (sidecar + trainer + fake-gcs)
 └── specs/001-forecast-sidecar-mvp/  # spec, plan, research, contracts, tasks

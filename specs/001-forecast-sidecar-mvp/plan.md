@@ -32,7 +32,7 @@ JSON to Cloud Logging, Sentry, and trace propagation mirror the existing
 - Persistence: `joblib` for model serialization (mlforecast docs default)
 - Docs CI: `lychee` (relative + external link-checker) for `README.md` + `docs/` (FR-029, SC-013)
 - Infra: Terraform ≥ 1.7 (`hashicorp/google` provider); `terraform fmt`/`validate`/`plan` in CI; state in GCS backend per env (FR-031, FR-036)
-- CI/CD: GitLab CI/CD (`.gitlab-ci.yml` + `ci/*.gitlab-ci.yml` includes); `gitleaks` for secret scan; Docker Buildx for image build; `gcloud` for Cloud Run deploys (FR-033, SC-017)
+- CI/CD: GitHub Actions (`.github/workflows/*.yml`); `gitleaks` for secret scan; Docker Buildx for image build; `gcloud` for Cloud Run deploys (FR-033, SC-017)
 - Local stack: Docker Compose (`compose.yaml`) + `fake-gcs-server` (Apache 2.0) for in-cluster GCS emulation (FR-032, FR-037, SC-014)
 
 **Storage**:
@@ -179,13 +179,15 @@ forecast-sidecar/
 ├── README.md                  # FR-027: stack, layout, local dev, deploy, contract pointers; links to docs/architecture.md
 ├── docs/
 │   └── architecture.md        # FR-028: system-context diagram, request + training lifecycles, storage/cache/auth, constitution mapping, contract links
-├── .gitlab-ci.yml             # FR-033: top-level pipeline; includes the files in ci/ below
-├── ci/
-│   ├── lint.gitlab-ci.yml     # ruff, mypy, gitleaks, lychee
-│   ├── test.gitlab-ci.yml     # pytest (unit + contract + integration markers)
-│   ├── build.gitlab-ci.yml    # docker buildx → push to Artifact Registry (staging + production)
-│   ├── iac.gitlab-ci.yml      # terraform fmt -check, validate, plan (artifact: plan.txt for MR review)
-│   └── deploy.gitlab-ci.yml   # deploy:staging (auto on main); deploy:production (manual, tag-gated)
+├── .github/
+│   └── workflows/             # FR-033: GitHub Actions
+│       ├── lint.yml           # ruff, mypy, gitleaks, terraform fmt, lychee
+│       ├── test.yml           # pytest (fast on PRs; full on main + tags)
+│       ├── build.yml          # docker buildx → push to Artifact Registry
+│       ├── iac.yml            # terraform fmt -check, validate, plan (uploaded as artifact for PR review)
+│       ├── deploy-staging.yml # auto on push to main
+│       ├── deploy-production.yml # manual on vX.Y.Z tag (production Environment with required reviewers)
+│       └── drift-check.yml    # scheduled (24h cadence) — terraform plan -detailed-exitcode
 ├── compose.yaml               # FR-032/FR-037: local stack — sidecar + trainer + fake-gcs-server
 ├── docker/
 │   ├── service.entrypoint.sh  # uvicorn launcher used by the service container

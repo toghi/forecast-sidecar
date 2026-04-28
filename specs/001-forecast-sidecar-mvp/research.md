@@ -404,11 +404,16 @@ locks the *shape* so tasks can be enumerated against it.
 
 ---
 
-## R12. Terraform layout + GitLab CI/CD + three environments
+## R12. Terraform layout + GitHub Actions CI/CD + three environments
 
 **Question**: How is `infra/` organized so staging and production share
-the same modules but cannot share state, and how does GitLab CI gate
-promotion?
+the same modules but cannot share state, and how does GitHub Actions
+gate promotion?
+
+> **Clarification 2026-04-29**: this section originally specified GitLab
+> CI/CD; the clarification log in [spec.md](spec.md#clarifications) records
+> the switch to GitHub Actions. The Terraform layout below is unchanged
+> by that switch; only the CI/CD pipeline is.
 
 **Decision** — *infra layout*:
 
@@ -436,38 +441,34 @@ infra/
         └── terraform.tfvars
 ```
 
-**Decision** — *GitLab CI/CD pipeline*:
+**Decision** — *GitHub Actions CI/CD pipeline*:
 
-`.gitlab-ci.yml` declares stages and `include:`s modular files under
-`ci/`. Stage order:
+Workflows live under `.github/workflows/`, one file per concern. GitHub
+Actions has no "stages" primitive; the equivalent is `needs:` between
+jobs and event triggers (`on:`) per workflow.
 
-1. `lint` — `ruff check`, `mypy --strict src/`, `gitleaks detect`,
-   `terraform fmt -check`, `lychee` over `README.md` + `docs/`.
-2. `test` — `pytest -m "not slow"` (fast); `pytest -m "slow"` runs only
-   on `main` and on tags to keep MR feedback under 3 min.
-3. `build` — Docker Buildx → push to staging Artifact Registry on every
-   pipeline; additionally tag and push to production Artifact Registry
-   on pipelines from a `vX.Y.Z` tag.
-4. `iac-validate` — `terraform validate` and `terraform plan` for both
-   `environments/staging/` and `environments/production/`. Plan output
-   uploaded as a job artifact (FR-034).
-5. `deploy:staging` — `terraform apply -auto-approve` + `gcloud run
-   deploy` + `gcloud run jobs update`. Runs automatically on `main`,
-   never on MRs (FR-035).
-6. `iac-apply:production` — `terraform apply` against production. **Manual**
-   (`when: manual`), gated on (a) the pipeline being for a `vX.Y.Z` tag
-   (`rules: - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/`), and (b) the
-   environment block (`environment: production`) which GitLab gates on
-   protected-environment approvers (FR-035, SC-016).
-7. `deploy:production` — `gcloud run deploy --image=<production-tag>` +
-   `gcloud run jobs update`. Also manual, runs after `iac-apply:production`.
-8. `drift-check` (scheduled, 24h cadence) — `terraform plan` on both
-   envs; non-empty plan → CI failure + Sentry alert (SC-015).
+| Workflow file | Trigger | Purpose |
+|---|---|---|
+| `lint.yml` | `pull_request`, `push: main`, `tag: v*` | `ruff check`, `mypy --strict src/`, `gitleaks detect`, `terraform fmt -check`, `lychee` over README + docs |
+| `test.yml` | `pull_request` (fast set) + `push: main` and tags (full set incl. `slow`) | `pytest`; junit-XML upload; PR feedback under ~3 min |
+| `build.yml` | `pull_request` (no push), `push: main` (push to staging GAR), `tag: v*` (push to production GAR) | Docker Buildx, `--build-arg GIT_SHA=${{ github.sha }}`, OIDC-auth to GCP via Workload Identity Federation |
+| `iac.yml` | `pull_request` paths-filtered to `infra/**` | `terraform fmt -check`, `terraform validate`, `terraform plan` for staging + production; uploads `plan.tfplan` + JSON as artifacts (FR-034) |
+| `deploy-staging.yml` | `push: main` after `lint`/`test`/`build`/`iac` succeed | `terraform apply -auto-approve` (staging) + `gcloud run deploy` + `gcloud run jobs update`; uses GitHub Environment `staging` |
+| `deploy-production.yml` | `push: tag v*` after staging deploy succeeds | `terraform apply` (production) + `gcloud run deploy` (image pinned to the tag) + `gcloud run jobs update`; uses GitHub Environment `production` with required reviewers (FR-035, SC-016) |
+| `drift-check.yml` | `schedule` (cron, 24h) | `terraform plan -detailed-exitcode` on both envs; non-zero exit → workflow failure + Sentry alert (SC-015) |
 
-GitLab "protected environments" + "protected branches" are configured
-so only `main` triggers the staging job, only tags trigger the
-production jobs, and only specific maintainers can approve the
-production manual gate.
+**Authentication to GCP**: Workload Identity Federation. `gcloud-auth-action`
+exchanges a GitHub-issued OIDC token for short-lived GCP credentials. No
+long-lived service-account JSON key in repository or environment secrets.
+
+**Branch protection + Environments**:
+- `main` is protected: required PR review, required status checks
+  (`lint`, `test`, `build`, `iac`), no force-push.
+- `production` GitHub Environment has required reviewers + a deployment
+  branch rule (only `v*` tags can deploy). Tag pushes that miss a
+  reviewer's approval pause indefinitely.
+- `staging` GitHub Environment has no required reviewers (auto-deploys
+  on `main`).
 
 **Decision** — *Terraform state*:
 
@@ -483,18 +484,24 @@ production manual gate.
 - Per-env GCP project + per-env state bucket gives clean blast-radius
   isolation. A leaked staging credential reads/writes nothing in
   production.
-- `include:`-based GitLab CI keeps `.gitlab-ci.yml` short and lets
-  reviewers diff stage logic independently.
-- `terraform plan` artifact on every MR makes infra changes review-able
+- One workflow per concern (vs one giant workflow with many jobs) keeps
+  YAML small, makes paths-filters cheap, and lets reviewers diff each
+  workflow independently.
+- `terraform plan` artifact on every PR makes infra changes review-able
   the same way as code changes.
+- Workload Identity Federation (no long-lived JSON keys in secrets) is
+  the GCP-recommended path for GitHub Actions.
 
 **Alternatives considered**:
-- *Terraform Cloud / TFC remote runs* — rejected for v1; GitLab
-  artifacts + protected environments give us the same audit trail
+- *Terraform Cloud / TFC remote runs* — rejected for v1; GitHub
+  artifacts + Environment approvals give us the same audit trail
   without an extra vendor.
 - *One GCP project for both envs with namespaced resources* — rejected;
   IAM and quota isolation is materially weaker.
-- *GitHub Actions* — explicitly out: repository is on GitLab.
+- *GitLab CI/CD* — earlier draft picked this; reversed by 2026-04-29
+  clarification (repository is on GitHub).
+- *Long-lived service-account JSON key in `secrets.GCP_SA_KEY`* —
+  rejected; Workload Identity Federation removes the credential exposure.
 - *Terragrunt* — adds a layer for very little gain at two envs;
   re-evaluate if we add a third cloud env.
 
@@ -588,10 +595,10 @@ blocking v1.
   uses.
 
 **Alternatives considered**:
-- *Storing secrets in GitLab CI variables and injecting at deploy time*
-  — rejected: the secret would land in Cloud Run revision history and
-  in pipeline logs unless masked perfectly. Secret Manager is purpose-
-  built and audit-logged.
+- *Storing secrets in GitHub Actions secrets and injecting at deploy
+  time* — rejected: the secret would land in Cloud Run revision history
+  and risks ending up in workflow logs unless masking is perfect.
+  Secret Manager is purpose-built and audit-logged.
 - *`ingress=ALL` + IAM-only auth* — rejected by FR-038. IAM is necessary
   but not sufficient; the spec mandates the service is unreachable from
   the public internet.
