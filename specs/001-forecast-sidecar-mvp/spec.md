@@ -309,6 +309,59 @@ distinct readiness signal) but not for first-cut functional value, so P2.
   this rule MUST be flagged by reviewers and not merged until the docs
   are updated.
 
+**Operations & Infrastructure**
+
+- **FR-031**: All cloud-platform infrastructure for this service MUST be
+  declared as Terraform (HCL) source in an `infra/` directory at the repo
+  root. Resources covered: the inference Cloud Run service, the training
+  Cloud Run Job, the model-storage bucket (with object versioning), all
+  IAM bindings (least-privilege per FR-026), the Artifact Registry
+  repository for the container image, the trainer-trigger queue, and any
+  Secret Manager secrets the service consumes. Manual ("clickops")
+  resource changes in staging or production are forbidden.
+- **FR-032**: Three environments MUST exist and be reproducible from
+  source:
+  1. **Local** — full stack runs on a developer's laptop via Docker
+     Compose (`compose.yaml`), including: the inference service, an
+     on-demand trainer container, and an in-cluster object-storage
+     emulator (e.g. `fake-gcs-server`) so no cloud credentials are
+     needed for the loop "edit → train → predict".
+  2. **Staging** — a complete deployment on the cloud platform, owned
+     by Terraform, used for integration with the calling backend's
+     staging environment. Identical service contract to production.
+  3. **Production** — the live deployment serving real callers, owned by
+     Terraform.
+  Local, staging, and production MUST share identical service-side code,
+  configuration schema, and contracts; they differ only in scale,
+  region, secrets, bucket names, and resource quotas.
+- **FR-033**: CI/CD MUST be defined in a `.gitlab-ci.yml` file at the repo
+  root, executed by GitLab CI/CD. The pipeline MUST include, at minimum,
+  these stages in order: `lint`, `test`, `build` (container image),
+  `iac-validate` (`terraform fmt -check`, `terraform validate`,
+  `terraform plan`), `deploy:staging`, `iac-apply:production`,
+  `deploy:production`.
+- **FR-034**: Every merge request MUST run `lint`, `test`, `build`, and
+  `iac-validate` and MUST block on any of those stages failing. The
+  `terraform plan` output for both staging and production MUST be
+  attached to the merge request as a job artifact so reviewers can see
+  the infrastructure diff.
+- **FR-035**: Merges to the default branch MUST automatically deploy to
+  staging (idempotent re-deploy is acceptable). Production deploy MUST
+  be a manual job in the pipeline, gated on (a) a release tag matching
+  `vX.Y.Z` and (b) explicit operator approval in GitLab. Production
+  deploy MUST NOT run automatically on merges.
+- **FR-036**: Secrets (Sentry DSN, OIDC allow-list contents, any other
+  credential) MUST be supplied via GCP Secret Manager (referenced by
+  Cloud Run) or via GitLab masked + protected CI variables. Secrets MUST
+  NOT appear in Terraform source, in committed files, or in Terraform
+  state output. Terraform state itself MUST live in a private GCS bucket
+  with object versioning enabled, one state-bucket per environment.
+- **FR-037**: The local environment MUST NOT require any GCP credentials
+  to run end-to-end. The default `compose.yaml` MUST start with
+  `AUTH_BYPASS=1` and an in-cluster object-storage emulator so a fresh
+  contributor can train + forecast against a fixture series with one
+  command.
+
 ### Key Entities
 
 - **Model artifact**: a self-contained, persisted forecasting model for one
@@ -368,6 +421,20 @@ distinct readiness signal) but not for first-cut functional value, so P2.
   `main`, the README contains a working relative link to the
   architecture document, and CI fails any pull request that breaks that
   link.
+- **SC-014**: From a fresh clone, `docker compose up` produces a
+  reachable `/forecast` endpoint serving a fixture-trained model in
+  under 5 minutes, with zero cloud credentials configured.
+- **SC-015**: Zero resources in staging or production exist outside
+  Terraform's state. Drift (resources that Terraform did not create or
+  that someone modified out of band) is detected by a scheduled
+  `terraform plan` job and surfaced as a CI failure within 24 hours.
+- **SC-016**: A merge request that passes review reaches staging within
+  10 minutes of merge to the default branch. A tagged release reaches
+  production within 15 minutes of operator approval.
+- **SC-017**: No secret value (Sentry DSN, allow-list payload, any other
+  credential) is present in any committed file in the repository,
+  verified by a secret-scanning job (`gitleaks` or equivalent) in the
+  `lint` stage.
 
 ## Assumptions
 
@@ -377,9 +444,14 @@ distinct readiness signal) but not for first-cut functional value, so P2.
   `pytest`, `pre-commit`. Run manifest captured per the constitution
   (Principle I).
 - **Deployment shape**: managed serverless containers — one HTTP service
-  unit, one batch-job unit, both built from the same image. Mirrors the
-  pattern already established by the existing Claude SDK sidecar in this
-  product (auth, logging, deploy pipeline).
+  unit, one batch-job unit, both built from the same image. Three
+  environments owned by Terraform: **local** (Docker Compose, no cloud
+  creds), **staging** (Cloud Run + GCS + IAM, behind staging IAM
+  boundary), **production** (Cloud Run + GCS + IAM, production IAM
+  boundary). One GCP project per cloud-deployed environment to keep IAM,
+  quotas, and billing isolated. Repository is hosted on GitLab; CI/CD is
+  GitLab CI/CD with `terraform plan` on every MR and a manual,
+  tag-gated production deploy.
 - **Caller is the broker**: the calling Go API is responsible for (a)
   computing future features (lags, encodings) before invoking inference,
   (b) staging history and feature config to object storage before
@@ -416,21 +488,31 @@ distinct readiness signal) but not for first-cut functional value, so P2.
 These choices are operational rather than scope-shaping; the spec assumes
 the defaults below and the planning phase can revisit if needed:
 
-- **Object-storage bucket layout**: one bucket per environment (`-prod`,
-  `-staging`, `-dev`); not one shared bucket with prefixes. Cleanly
-  separates blast radius and IAM.
-- **Error tracker project**: a dedicated project for this service (mirrors
-  the existing sidecar's pattern), not shared with the backend project, so
-  signal-to-noise stays clean.
+- **Object-storage bucket layout**: one bucket per cloud environment
+  (`{prefix}-forecast-models-staging`, `{prefix}-forecast-models-production`);
+  bucket created and owned by Terraform per FR-031. Local dev uses an
+  in-cluster `fake-gcs-server` named `fake-gcs` on the compose network,
+  no real bucket.
+- **Error tracker project**: a dedicated Sentry project for this service
+  (mirrors the existing sidecar's pattern). One Sentry project shared
+  across staging + production with `SENTRY_ENVIRONMENT` distinguishing
+  them.
 - **Region**: deploy in the same region as the calling backend's primary
-  data residency to keep training-data transfer in-region and minimize
-  egress cost.
-- **Training trigger**: cloud-tasks queue (mirrors the existing pattern in
-  the calling backend) rather than an alternative scheduler→pubsub→job
-  fan-out.
-- **OpenAPI / `/docs` endpoint**: enabled in non-production deployments,
-  disabled in production unless explicitly opted in.
+  data residency (default `europe-west1`) to keep training-data
+  transfer in-region and minimize egress cost. Same region used for both
+  staging and production.
+- **Training trigger**: Cloud Tasks queue (mirrors the existing pattern
+  in the calling backend), provisioned by Terraform per FR-031, rather
+  than a Scheduler → Pub/Sub → Job alternative.
+- **OpenAPI / `/docs` endpoint**: enabled in local and staging,
+  disabled in production by default (env-toggled).
+- **GCP project layout**: one GCP project per cloud-deployed
+  environment (`{prefix}-forecast-staging`, `{prefix}-forecast-production`).
+  Terraform `infra/environments/{staging,production}/` invokes shared
+  modules in `infra/modules/` against the matching project.
+- **Production deploy gate**: a tag matching `vX.Y.Z` plus explicit
+  manual approval in GitLab. No auto-deploy to production from `main`.
 
-These five items are tracked here so they are visible to planning, but none
-of them changes the spec's correctness or scope — they would be settled in
+These items are tracked here so they are visible to planning. None
+changes the spec's correctness or scope — they are settled in
 `/speckit-plan` or in a deployment-config PR.
