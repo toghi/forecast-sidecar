@@ -37,7 +37,7 @@ def _build_model(history_df: pd.DataFrame, *, h: int, n_windows: int) -> MLForec
     )
     mlf.fit(
         history_df,
-        static_features=["segment", "region"],
+        static_features=[],
         prediction_intervals=PredictionIntervals(n_windows=n_windows, h=h),
     )
     return mlf
@@ -58,13 +58,12 @@ def train_and_seed_model(
     GCS at v{version}/, plus a `latest.json` pointer."""
     history = history.copy()
     history["unique_id"] = f"{company_id}/{computed_object_id}"
-    # Drop historic-only columns the inference call won't supply.
-    for col in ("calls",):
-        if col in history.columns:
-            history = history.drop(columns=[col])
-    for col in ("segment", "region", "bizdev_id"):
-        if col in history.columns:
-            history[col] = history[col].astype("category")
+    # Phase-3 fixture trains a deliberately small model: lags + date_features
+    # + one numeric future_exog (active_clients). Phase 4's real trainer
+    # consumes feature_config.json to wire up categoricals/static features.
+    cols_to_drop = [c for c in ("calls", "segment", "region", "bizdev_id") if c in history.columns]
+    if cols_to_drop:
+        history = history.drop(columns=cols_to_drop)
 
     mlf = _build_model(history, h=h, n_windows=n_windows)
 
@@ -73,10 +72,10 @@ def train_and_seed_model(
         "target": "y",
         "horizon": h,
         "min_history_periods": 18,
-        "static_features": ["segment", "region"],
-        "historic_exog": ["calls"],
-        "future_exog": ["active_clients", "bizdev_id"],
-        "categorical_features": ["segment", "region", "bizdev_id"],
+        "static_features": [],
+        "historic_exog": [],
+        "future_exog": ["active_clients"],
+        "categorical_features": [],
         "lags": [1, 3, 6, 12],
         "date_features": ["month"],
     }
