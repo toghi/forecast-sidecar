@@ -92,6 +92,7 @@ Single project, src layout (per [plan.md](plan.md) §Project Structure):
 - [ ] T033 [P] Contract test for feature-config schema in `tests/contract/test_feature_config.py` using `jsonschema.validate` on `tests/fixtures/sample_feature_config.json` against `specs/001-forecast-sidecar-mvp/contracts/feature_config.schema.json`
 - [ ] T034 [P] Unit tests for `model/features.build_mlforecast_kwargs` in `tests/unit/test_features.py` (correct lags array, lag_transforms instantiated, date_features mapped, infer_seasonality(MS)=12)
 - [ ] T035 [P] Unit tests for OIDC `verify_oidc_token` in `tests/unit/test_auth.py` using monkeypatched `verify_oauth2_token` (valid → claims; bad audience → 401; not-in-allowlist → 401; bypass honored only with localhost+debug; bypass refused with cloud audience)
+- [ ] T035a [P] Unit tests for `Settings` startup gate in `tests/unit/test_config.py`: instantiating `Settings` with a non-localhost `EXPECTED_AUDIENCE` AND empty `ALLOWED_CALLERS` raises `ConfigurationError` (FR-041); same audience with non-empty allow-list constructs cleanly; localhost audience with empty allow-list constructs cleanly (local-dev path)
 
 **Checkpoint**: `docker compose up` boots the sidecar container with `/healthz` only (no auth), all foundational unit + contract tests pass, fake-gcs has the seeded fixture bucket.
 
@@ -133,6 +134,7 @@ Single project, src layout (per [plan.md](plan.md) §Project Structure):
 - [ ] T045 [P] [US2] Integration test in `tests/integration/test_train_idempotent.py`: run CLI twice with same `--output-version`, assert second run succeeds (exit 0) with no partial writes and `latest.json` stable
 - [ ] T046 [P] [US2] Integration test in `tests/integration/test_train_failure_modes.py`: (a) history with all-NaN target → exit 3 + `error.json`, no `latest.json` update; (b) history with < `min_history_periods` → exit 2; (c) calibration regression scenario (force model to lose to baseline) → exit 4 + artifact written but `latest.json` unchanged
 - [ ] T047 [P] [US2] Integration test in `tests/integration/test_train_promotion_race.py`: simulate two writers racing the CAS → loser exits 5 cleanly with `latest.json` at the higher version
+- [ ] T047a [P] [US2] Integration test in `tests/integration/test_train_retention.py`: run 11 successful trainings against the synthetic fixture with `--output-version=1..11`; assert versions `v2..v11` and `latest.json` survive while `v1/` is pruned (FR-042); separately, force `latest.json` to point at `v3` and run a 12th promotion; assert `v3/` survives the prune even though `K=3 < N-9=12-9=3` boundary (defensive guarantee per FR-042)
 
 ### Implementation for User Story 2
 
@@ -198,7 +200,7 @@ Single project, src layout (per [plan.md](plan.md) §Project Structure):
 
 ---
 
-## Phase 8: Operations & Infrastructure Deliverables (FR-031 → FR-040, SC-014 → SC-020)
+## Phase 8: Operations & Infrastructure Deliverables (FR-031 → FR-043, SC-014 → SC-020)
 
 **Purpose**: Container, local stack, GitLab CI/CD pipeline, and Terraform modules + envs that make the service deployable to staging and production.
 
