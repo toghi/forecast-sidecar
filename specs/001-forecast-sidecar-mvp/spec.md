@@ -15,6 +15,8 @@ holds no business logic and no database access."
 
 - Q: Which network primitive should the forecast service use to be reachable only from the backend's VPC? → A: Direct VPC egress + VPC peering (modern GCP-recommended path); align with `toolsname-agent-sidecar` in a follow-up MR if they diverge
 - Q: Must `ALLOWED_CALLERS` be a non-empty allow-list in production? → A: Required (non-empty) in staging + production; service refuses to start if unset. Local stays open for dev friction.
+- Q: What retention policy applies to old model versions? → A: Keep the 10 most recent versions per `(company, CO)`; trainer prunes older `v{N}/` directories after a successful promotion.
+- Q: What concurrency cap should the trainer queue enforce? → A: `max_concurrent_dispatches = 5` in production, `2` in staging. No per-second rate cap.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -413,6 +415,25 @@ distinct readiness signal) but not for first-cut functional value, so P2.
   Terraform MUST refuse `plan`/`apply` against staging or production
   when the corresponding `terraform.tfvars` does not declare an
   allow-list of length ≥ 1.
+- **FR-042**: Per `(company_id, computed_object_id)`, the system MUST
+  retain only the 10 most-recent training attempts (success or
+  failure). After a successful promotion of `latest.json` to version
+  `N`, the trainer MUST delete every `v{K}/` directory where `K < N -
+  9`. The directory currently named by `latest.json` MUST always
+  survive pruning even if its number falls outside the 10-most-recent
+  window (defensive guarantee; under normal operation `latest` is the
+  most recent successful version and is implicitly in the window).
+  Pruning errors are non-fatal: they are logged at WARN with the
+  offending paths, do not cause a non-zero exit, and do not roll back
+  the promotion. Bucket-level object versioning remains on as
+  defense-in-depth (FR-031).
+- **FR-043**: The training-trigger queue MUST enforce a per-environment
+  concurrency cap on simultaneously-dispatched training tasks:
+  `max_concurrent_dispatches = 5` in production, `max_concurrent_dispatches
+  = 2` in staging. No per-second dispatch-rate cap is required in v1.
+  Caps are declared in `infra/environments/{staging,production}/
+  terraform.tfvars` and bound to the `cloud_tasks` Terraform module so
+  the values are part of the reviewed plan diff.
 
 ### Key Entities
 
@@ -546,6 +567,8 @@ distinct readiness signal) but not for first-cut functional value, so P2.
 - **Storage layout**: per-`(company, CO)` artifact tree on object storage
   with explicit version subdirectories and a `latest` pointer file
   alongside. Bucket-level versioning is enabled as defense-in-depth.
+  Retention: 10 most-recent versions per pair, pruned by the trainer
+  after successful promotion (clarification 2026-04-28 / FR-042).
 - **Authentication**: service-to-service identity tokens issued by the
   cloud platform; this service verifies audience and (optionally) caller
   identity allow-list.
