@@ -1,0 +1,53 @@
+# test workflow (T071): fast pytest on every PR; full suite (incl. slow
+# + integration markers) on push to main and tags so PR feedback stays
+# under ~3 min.
+name: test
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pytest-fast:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+      - name: Install libomp (LightGBM runtime)
+        run: sudo apt-get update && sudo apt-get install -y libgomp1
+      - run: uv sync --frozen --extra dev
+      - name: Run fast tests
+        run: uv run pytest -q --junitxml=junit-fast.xml
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: junit-fast
+          path: junit-fast.xml
+
+  pytest-full:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+      - name: Install libomp (LightGBM runtime)
+        run: sudo apt-get update && sudo apt-get install -y libgomp1
+      - run: uv sync --frozen --extra dev
+      - name: Run full suite (incl. slow + integration)
+        run: uv run pytest -m "" -q --junitxml=junit-full.xml
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: junit-full
+          path: junit-full.xml

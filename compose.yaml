@@ -1,0 +1,86 @@
+# Local stack — FR-032 / FR-037 / SC-014.
+# `docker compose up --build` brings up the inference service, an in-cluster
+# fake-gcs-server, and a one-shot seed step that creates the bucket.
+# The trainer is profile-gated (`--profile train`) so it doesn't run on every
+# `up`; invoke explicitly with `docker compose run --rm trainer ...`.
+
+services:
+  fake-gcs:
+    image: fsouza/fake-gcs-server:1.49
+    command: >-
+      -scheme http
+      -port 4443
+      -external-url http://fake-gcs:4443
+      -public-host fake-gcs:4443
+    ports:
+      - "4443:4443"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:4443/storage/v1/b"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+
+  seed:
+    image: curlimages/curl:8.10.1
+    depends_on:
+      fake-gcs:
+        condition: service_healthy
+    environment:
+      FORECAST_BUCKET: local-dev-bucket
+      GCS_FAKE_HOST: http://fake-gcs:4443
+    volumes:
+      - ./docker/fake-gcs/seed.sh:/seed.sh:ro
+    entrypoint: ["sh", "/seed.sh"]
+    restart: "no"
+
+  sidecar:
+    build:
+      context: .
+      args:
+        GIT_SHA: dev
+    image: forecast-sidecar:local
+    ports:
+      - "8080:8080"
+    env_file: .env
+    environment:
+      FORECAST_BUCKET: local-dev-bucket
+      GCS_FAKE_HOST: http://fake-gcs:4443
+      EXPECTED_AUDIENCE: http://localhost:8080
+      AUTH_BYPASS: "1"
+      LOG_LEVEL: debug
+      FORECAST_ALLOW_FILE_URLS: "1"
+    depends_on:
+      fake-gcs:
+        condition: service_healthy
+      seed:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8080/healthz', timeout=2).status == 200 else 1)"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  trainer:
+    image: forecast-sidecar:local
+    profiles: ["train"]
+    build:
+      context: .
+      args:
+        GIT_SHA: dev
+    env_file: .env
+    environment:
+      FORECAST_BUCKET: local-dev-bucket
+      GCS_FAKE_HOST: http://fake-gcs:4443
+      EXPECTED_AUDIENCE: http://localhost:8080
+      AUTH_BYPASS: "1"
+      LOG_LEVEL: debug
+      FORECAST_ALLOW_FILE_URLS: "1"
+    volumes:
+      - ./tests/fixtures:/fixtures:ro
+    depends_on:
+      fake-gcs:
+        condition: service_healthy
+      seed:
+        condition: service_completed_successfully
+    entrypoint: ["python", "-m", "forecast_sidecar.train_cli"]

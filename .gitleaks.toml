@@ -1,0 +1,27 @@
+# gitleaks 8.x — secret scanner config (SC-017).
+# Run via:  gitleaks detect --redact -v
+# Pre-commit + CI lint workflows invoke this on every PR + push to main.
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Files where placeholder credentials are intentional"
+paths = [
+    '''tests/fixtures/.+''',
+    '''^\.env\.example$''',
+    '''specs/.+\.md$''',
+    '''docs/.+\.md$''',
+    '''README\.md$''',
+    '''\.specify/.+''',
+    # Test fixtures sometimes contain placeholder DSNs (e.g. Sentry stub).
+    '''tests/.+\.py$''',
+]
+
+# Keep gitleaks's defaults for Stripe / AWS / GCP / Slack / etc., but
+# whitelist a couple of obvious false-positive shapes that show up in
+# our spec docs (UUID-shaped fixture identifiers, Cloud Run trace
+# context examples, etc.).
+[[allowlist.regexes]]
+description = "Cloud Run trace context examples in docs"
+regex = '''[0-9a-fA-F]{16,}/\d+(;o=[01])?'''
