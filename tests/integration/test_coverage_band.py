@@ -32,7 +32,7 @@ _FEATURE_CONFIG: dict[str, Any] = {
         "num_leaves": 15,
         "min_data_in_leaf": 2,
     },
-    "calibration": {"n_windows": 5},
+    "calibration": {"n_windows": 2},
 }
 
 

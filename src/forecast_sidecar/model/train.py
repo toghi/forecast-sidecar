@@ -180,18 +180,24 @@ def run_fit_pipeline(
         num_threads=1,
         **mlf_kwargs,
     )
-    # Run CV first for metrics; mlforecast.cross_validation does its own
-    # internal fits on truncated data and leaves the model in an unusable
-    # state for downstream predict calls.
+    # First fit registers the conformal calibration on the full data. CV
+    # then reuses those intervals for per-fold coverage metrics. mlforecast
+    # internally re-fits during CV and leaves the model in an unusable
+    # state for downstream predict, so we fit a third time at the end to
+    # restore a fully-fitted, calibrated model for joblib.dump.
+    mlf.fit(
+        df,
+        static_features=static_features,
+        prediction_intervals=PredictionIntervals(n_windows=n_windows, h=h),
+    )
     cv_df = mlf.cross_validation(
         df=df,
         n_windows=n_windows,
         h=h,
         static_features=static_features,
         level=[80, 95],
+        prediction_intervals=PredictionIntervals(n_windows=n_windows, h=h),
     )
-    # Then fit on the full data + register conformal intervals for the
-    # production model that will be joblib-dumped + served.
     mlf.fit(
         df,
         static_features=static_features,
