@@ -1,0 +1,47 @@
+# external-probe workflow (T086, SC-018): assert that the staging +
+# production *.run.app hostnames are unreachable from outside the VPC.
+# A successful TLS handshake from the public-internet GitHub runner
+# would mean ingress=internal isn't enforced — workflow fails.
+name: external-probe
+
+on:
+  schedule:
+    # Daily at 05:00 UTC.
+    - cron: "0 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - env: staging
+            url_var: STAGING_RUN_URL
+          - env: production
+            url_var: PRODUCTION_RUN_URL
+    steps:
+      - name: Probe ${{ matrix.env }} from public internet
+        run: |
+          URL="${{ vars[matrix.url_var] }}"
+          if [ -z "$URL" ]; then
+            echo "FAIL: ${{ matrix.url_var }} repository variable is not set"
+            exit 1
+          fi
+          # Expect curl to FAIL (connection refused, timeout, or 403 from
+          # the GFE before TLS terminates). Anything in 2xx/3xx means
+          # ingress=internal is broken.
+          set +e
+          curl --max-time 15 --silent --fail -o /tmp/body "$URL/healthz"
+          ec=$?
+          set -e
+          if [ "$ec" -eq 0 ]; then
+            echo "FAIL: $URL/healthz returned 2xx from the public internet."
+            cat /tmp/body
+            exit 1
+          fi
+          echo "OK: $URL not reachable (curl exit code $ec)"

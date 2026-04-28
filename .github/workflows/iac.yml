@@ -1,0 +1,91 @@
+# iac workflow (T073): terraform fmt + validate + plan for staging and
+# production. Plan output uploaded as artifacts so reviewers see the
+# infrastructure diff (FR-034).
+name: iac
+
+on:
+  pull_request:
+    paths:
+      - "infra/**"
+      - ".github/workflows/iac.yml"
+  push:
+    branches: [main]
+    paths:
+      - "infra/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+  pull-requests: write   # for plan-comment posting
+
+jobs:
+  iac-fmt-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.7.5"
+      - run: terraform fmt -check -recursive infra/
+
+  iac-validate:
+    runs-on: ubuntu-latest
+    needs: iac-fmt-check
+    strategy:
+      matrix:
+        env: [staging, production]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.7.5"
+      - name: terraform validate (offline)
+        working-directory: infra/environments/${{ matrix.env }}
+        run: |
+          terraform init -backend=false
+          terraform validate
+
+  iac-plan:
+    runs-on: ubuntu-latest
+    needs: iac-validate
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - env: staging
+            wif_provider_var: GCP_WIF_PROVIDER_STAGING
+            sa_var: GCP_TF_SA_STAGING
+            project_var: GCP_PROJECT_STAGING
+          - env: production
+            wif_provider_var: GCP_WIF_PROVIDER_PRODUCTION
+            sa_var: GCP_TF_SA_PRODUCTION
+            project_var: GCP_PROJECT_PRODUCTION
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars[matrix.wif_provider_var] }}
+          service_account: ${{ vars[matrix.sa_var] }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.7.5"
+
+      - name: terraform init + plan
+        working-directory: infra/environments/${{ matrix.env }}
+        run: |
+          terraform init -backend-config="bucket=${{ vars.TFSTATE_BUCKET_PREFIX }}-${{ matrix.env }}"
+          terraform plan -out=plan.tfplan -no-color
+          terraform show -json plan.tfplan > plan.json
+          terraform show -no-color plan.tfplan > plan.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tfplan-${{ matrix.env }}
+          path: |
+            infra/environments/${{ matrix.env }}/plan.tfplan
+            infra/environments/${{ matrix.env }}/plan.json
+            infra/environments/${{ matrix.env }}/plan.txt
+          retention-days: 14

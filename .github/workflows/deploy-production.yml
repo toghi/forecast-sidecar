@@ -1,0 +1,79 @@
+# deploy-production workflow (T074b): manual on vX.Y.Z tag, gated by the
+# `production` GitHub Environment with required reviewers (FR-035, SC-016).
+name: deploy-production
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Semver tag to deploy (vX.Y.Z); must already exist"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  validate-tag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Reject non-semver tags
+        run: |
+          REF="${GITHUB_REF_NAME:-${{ inputs.tag }}}"
+          if ! echo "$REF" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "Refusing to deploy non-semver tag: $REF"
+            exit 1
+          fi
+
+  iac-apply-production:
+    needs: validate-tag
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://forecast-sidecar-production.run.app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER_PRODUCTION }}
+          service_account: ${{ vars.GCP_TF_SA_PRODUCTION }}
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.7.5"
+      - name: terraform apply (production)
+        working-directory: infra/environments/production
+        run: |
+          terraform init -backend-config="bucket=${{ vars.TFSTATE_BUCKET_PREFIX }}-production"
+          terraform apply -auto-approve -var="image_tag=${GITHUB_REF_NAME:-${{ inputs.tag }}}"
+
+  deploy-production:
+    needs: iac-apply-production
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://forecast-sidecar-production.run.app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER_PRODUCTION }}
+          service_account: ${{ vars.GCP_DEPLOY_SA_PRODUCTION }}
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Confirm Cloud Run revision is the tagged image
+        run: |
+          REVISION=$(gcloud run services describe forecast-sidecar \
+                       --project=${{ vars.GCP_PROJECT_PRODUCTION }} \
+                       --region=${{ vars.GAR_REGION }} \
+                       --format='value(spec.template.spec.containers[0].image)')
+          echo "Live image: $REVISION"
+          if ! echo "$REVISION" | grep -q "${GITHUB_REF_NAME:-${{ inputs.tag }}}$"; then
+            echo "Cloud Run revision does not match the tag — aborting"
+            exit 1
+          fi

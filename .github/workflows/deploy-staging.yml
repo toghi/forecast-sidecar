@@ -1,0 +1,73 @@
+# deploy-staging workflow (T074a): auto-deploy on push to main after
+# lint/test/build/iac succeed. terraform apply + gcloud run deploy +
+# gcloud run jobs update against the staging GCP project.
+name: deploy-staging
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false
+
+jobs:
+  wait-for-prereqs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require lint, test, build, iac success on this commit
+        uses: lewagon/wait-on-check-action@v1.3.4
+        with:
+          ref: ${{ github.sha }}
+          check-regexp: "^(ruff|mypy|gitleaks|terraform-fmt|docs-link-check|env-contract|terraform-secrets-check|pytest-full|build|iac-plan .*)$"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          wait-interval: 15
+          allowed-conclusions: success
+
+  deploy:
+    needs: wait-for-prereqs
+    runs-on: ubuntu-latest
+    environment:
+      name: staging
+      url: https://forecast-sidecar-staging.run.app
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER_STAGING }}
+          service_account: ${{ vars.GCP_TF_SA_STAGING }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.7.5"
+
+      - name: terraform apply (staging)
+        working-directory: infra/environments/staging
+        run: |
+          terraform init -backend-config="bucket=${{ vars.TFSTATE_BUCKET_PREFIX }}-staging"
+          terraform apply -auto-approve -var="image_tag=${{ github.sha }}"
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Smoke test /readyz from inside the VPC
+        run: |
+          # Resolve the internal Cloud Run URL via gcloud and curl /readyz.
+          # Workload Identity grants run.invoker for this check only.
+          URL=$(gcloud run services describe forecast-sidecar \
+                  --project=${{ vars.GCP_PROJECT_STAGING }} \
+                  --region=${{ vars.GAR_REGION }} \
+                  --format='value(status.url)')
+          gcloud run services proxy forecast-sidecar \
+            --project=${{ vars.GCP_PROJECT_STAGING }} \
+            --region=${{ vars.GAR_REGION }} \
+            --port=8080 &
+          PROXY_PID=$!
+          sleep 5
+          curl --fail --max-time 30 http://localhost:8080/readyz
+          kill $PROXY_PID || true

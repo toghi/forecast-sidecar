@@ -1,0 +1,83 @@
+# build workflow (T072): Docker Buildx → push to Artifact Registry.
+# Auth via Workload Identity Federation (no JSON service-account keys).
+# - PR: build only (no push)
+# - push: main → push to staging GAR
+# - tag v*: push to staging + production GAR
+name: build
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write   # required for Workload Identity Federation
+
+env:
+  IMAGE_NAME: forecast-sidecar
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Authenticate to GCP (staging)
+        if: github.event_name != 'pull_request'
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER_STAGING }}
+          service_account: ${{ vars.GCP_BUILD_SA_STAGING }}
+
+      - name: Configure Docker for staging Artifact Registry
+        if: github.event_name != 'pull_request'
+        run: gcloud auth configure-docker ${{ vars.GAR_REGION }}-docker.pkg.dev --quiet
+
+      - name: Build (PR — no push)
+        if: github.event_name == 'pull_request'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: ${{ env.IMAGE_NAME }}:pr-${{ github.event.pull_request.number }}
+          build-args: |
+            GIT_SHA=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build & push to staging GAR
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ vars.GAR_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_STAGING }}/${{ vars.GAR_REPO }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+            ${{ vars.GAR_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_STAGING }}/${{ vars.GAR_REPO }}/${{ env.IMAGE_NAME }}:latest
+          build-args: |
+            GIT_SHA=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Authenticate to GCP (production)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER_PRODUCTION }}
+          service_account: ${{ vars.GCP_BUILD_SA_PRODUCTION }}
+
+      - name: Push tag to production GAR
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          STAGING_IMAGE="${{ vars.GAR_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_STAGING }}/${{ vars.GAR_REPO }}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
+          PROD_IMAGE="${{ vars.GAR_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_PRODUCTION }}/${{ vars.GAR_REPO }}/${{ env.IMAGE_NAME }}:${GITHUB_REF_NAME}"
+          gcloud auth configure-docker ${{ vars.GAR_REGION }}-docker.pkg.dev --quiet
+          docker pull "$STAGING_IMAGE"
+          docker tag "$STAGING_IMAGE" "$PROD_IMAGE"
+          docker push "$PROD_IMAGE"
