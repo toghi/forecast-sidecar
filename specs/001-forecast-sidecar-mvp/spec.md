@@ -350,17 +350,49 @@ distinct readiness signal) but not for first-cut functional value, so P2.
   be a manual job in the pipeline, gated on (a) a release tag matching
   `vX.Y.Z` and (b) explicit operator approval in GitLab. Production
   deploy MUST NOT run automatically on merges.
-- **FR-036**: Secrets (Sentry DSN, OIDC allow-list contents, any other
-  credential) MUST be supplied via GCP Secret Manager (referenced by
-  Cloud Run) or via GitLab masked + protected CI variables. Secrets MUST
-  NOT appear in Terraform source, in committed files, or in Terraform
-  state output. Terraform state itself MUST live in a private GCS bucket
-  with object versioning enabled, one state-bucket per environment.
+- **FR-036**: Configuration values MUST be supplied per environment
+  according to this strict source map; no other source is permitted:
+  - **Local**: a `.env` file at the repo root, loaded by Docker Compose
+    via `env_file:` and by the application via `pydantic-settings`. A
+    committed `.env.example` MUST list every variable with a placeholder
+    value and a one-line comment. The real `.env` MUST be gitignored and
+    Docker-ignored.
+  - **Staging** and **Production**: every secret (Sentry DSN, OIDC
+    allow-list contents, any future credential) MUST live in **Google
+    Secret Manager** in the same GCP project as the deployment, mounted
+    into the Cloud Run service / Job as environment variables via the
+    Cloud Run Secret integration. Non-secret env vars (port, audience,
+    bucket name, log level) MUST be set on the Cloud Run resource by
+    Terraform.
+  Secrets MUST NOT appear in Terraform source, in committed files, in
+  Terraform plan output, in container images, or in CI logs (CI vars
+  used to bootstrap Secret Manager MUST be GitLab masked + protected).
+  Terraform state itself MUST live in a private GCS bucket with object
+  versioning enabled, one state-bucket per environment.
 - **FR-037**: The local environment MUST NOT require any GCP credentials
   to run end-to-end. The default `compose.yaml` MUST start with
   `AUTH_BYPASS=1` and an in-cluster object-storage emulator so a fresh
   contributor can train + forecast against a fixture series with one
   command.
+- **FR-038**: The inference service in staging and production MUST NOT
+  be reachable from the public internet. Cloud Run ingress MUST be
+  configured as `internal` (or `internal-and-cloud-load-balancing` only
+  if a private internal load balancer is used). Direct DNS resolution
+  to the `*.run.app` hostname from outside Google's network MUST NOT
+  result in a successful TLS handshake to the service.
+- **FR-039**: The inference service MUST be reachable from the calling
+  backend's GCP project (and only from there). The network topology
+  MUST mirror the existing `toolsname-agent-sidecar` (Claude SDK
+  sidecar): a VPC connector / VPC attachment on the Cloud Run service,
+  Shared VPC or VPC peering with the backend project, and Cloud NAT
+  configured for any required outbound that is not covered by Private
+  Google Access. Backend → forecast traffic MUST traverse the private
+  VPC path; egress from the forecast service to GCS and to the OIDC
+  JWKS endpoint MUST use Private Google Access (no NAT hop).
+- **FR-040**: Reachability MUST be defended in depth: even from inside
+  the permitted VPC, every request still requires a valid OIDC token
+  (FR-018, FR-019, FR-020). Network isolation is additive to, not a
+  replacement for, OIDC authentication.
 
 ### Key Entities
 
@@ -435,6 +467,19 @@ distinct readiness signal) but not for first-cut functional value, so P2.
   credential) is present in any committed file in the repository,
   verified by a secret-scanning job (`gitleaks` or equivalent) in the
   `lint` stage.
+- **SC-018**: A direct request from outside any backend project's VPC
+  to the staging or production forecast hostname (raw `*.run.app` URL,
+  curl-from-laptop) MUST NOT reach the application — verified by a
+  scheduled external probe in CI that asserts the request fails before
+  TLS terminates at the service.
+- **SC-019**: Every Cloud Run env var that holds a secret resolves to a
+  Secret Manager reference (`secretKeyRef`-equivalent on Cloud Run);
+  zero secrets are stored as plaintext on the Cloud Run resource,
+  verified by a Terraform-output assertion in CI.
+- **SC-020**: `.env` is present in `.gitignore` and `.dockerignore` on
+  `main`; `.env.example` is present and lists every variable the
+  application reads — verified by a CI job that diffs the variable list
+  against `pydantic-settings` field introspection.
 
 ## Assumptions
 
@@ -446,12 +491,23 @@ distinct readiness signal) but not for first-cut functional value, so P2.
 - **Deployment shape**: managed serverless containers — one HTTP service
   unit, one batch-job unit, both built from the same image. Three
   environments owned by Terraform: **local** (Docker Compose, no cloud
-  creds), **staging** (Cloud Run + GCS + IAM, behind staging IAM
-  boundary), **production** (Cloud Run + GCS + IAM, production IAM
-  boundary). One GCP project per cloud-deployed environment to keep IAM,
-  quotas, and billing isolated. Repository is hosted on GitLab; CI/CD is
-  GitLab CI/CD with `terraform plan` on every MR and a manual,
-  tag-gated production deploy.
+  creds, env via `.env` file), **staging** (its own GCP project, secrets
+  in Secret Manager), **production** (its own GCP project, secrets in
+  Secret Manager). Cloud-deployed environments use Cloud Run with
+  ingress = `internal`; the service is reachable only from the calling
+  backend's VPC via the same network topology as the existing
+  `toolsname-agent-sidecar` (Shared VPC or VPC peering between the
+  backend project and the forecast project, plus Cloud NAT for any
+  outbound not covered by Private Google Access). Repository is hosted
+  on GitLab; CI/CD is GitLab CI/CD with `terraform plan` on every MR and
+  a manual, tag-gated production deploy.
+- **Configuration sourcing**: local reads from `.env` (gitignored;
+  `.env.example` committed); staging and production read non-secrets
+  from Terraform-managed Cloud Run env vars and read secrets from
+  Google Secret Manager via the Cloud Run Secret integration. No env
+  variable in a cloud environment is set from a GitLab CI variable at
+  runtime — CI vars are used only to bootstrap Secret Manager entries
+  and to authenticate Terraform.
 - **Caller is the broker**: the calling Go API is responsible for (a)
   computing future features (lags, encodings) before invoking inference,
   (b) staging history and feature config to object storage before
@@ -512,6 +568,17 @@ the defaults below and the planning phase can revisit if needed:
   modules in `infra/modules/` against the matching project.
 - **Production deploy gate**: a tag matching `vX.Y.Z` plus explicit
   manual approval in GitLab. No auto-deploy to production from `main`.
+- **Network topology**: mirror the existing `toolsname-agent-sidecar`
+  exactly — same VPC connector / Direct VPC mode, same Shared VPC vs
+  VPC peering choice, same Cloud NAT configuration. The planner MUST
+  read that sidecar's Terraform before scaffolding `infra/modules/`
+  here; if the existing pattern uses Shared VPC the forecast project
+  joins the same shared VPC host, if it uses peering the forecast
+  project peers to the backend's VPC.
+- **Secret Manager scope**: per-project Secret Manager (one set of
+  secrets per cloud env). The Cloud Run service account holds
+  `roles/secretmanager.secretAccessor` only on the secrets it actually
+  consumes, granted at the secret level (not project level) by Terraform.
 
 These items are tracked here so they are visible to planning. None
 changes the spec's correctness or scope — they are settled in

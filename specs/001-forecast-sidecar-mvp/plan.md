@@ -31,6 +31,9 @@ JSON to Cloud Logging, Sentry, and trace propagation mirror the existing
 - CLI: `click` for `train_cli`
 - Persistence: `joblib` for model serialization (mlforecast docs default)
 - Docs CI: `lychee` (relative + external link-checker) for `README.md` + `docs/` (FR-029, SC-013)
+- Infra: Terraform ≥ 1.7 (`hashicorp/google` provider); `terraform fmt`/`validate`/`plan` in CI; state in GCS backend per env (FR-031, FR-036)
+- CI/CD: GitLab CI/CD (`.gitlab-ci.yml` + `ci/*.gitlab-ci.yml` includes); `gitleaks` for secret scan; Docker Buildx for image build; `gcloud` for Cloud Run deploys (FR-033, SC-017)
+- Local stack: Docker Compose (`compose.yaml`) + `fake-gcs-server` (Apache 2.0) for in-cluster GCS emulation (FR-032, FR-037, SC-014)
 
 **Storage**:
 - **Durable**: GCS — `gs://{FORECAST_BUCKET}/forecasts/{company_id}/{co_id}/{vN}/{model.pkl, metadata.json}` plus `latest.json` and (on failure) `error.json`
@@ -57,9 +60,11 @@ JSON to Cloud Logging, Sentry, and trace propagation mirror the existing
 **Constraints**:
 - Stateless service tier — no DB, no per-request disk writes
 - OIDC inbound on every endpoint except `/healthz` and `/readyz`
+- Cloud Run ingress = `internal` on staging + production; reachable only from the calling backend's VPC (FR-038, FR-039)
 - LightGBM `deterministic=True`, fixed `seed`, fixed `num_threads` (constitution Principle I)
 - One Docker image, two entrypoints (`uvicorn` for service, `python -m forecast_sidecar.train_cli` for job)
 - Inference identity: `roles/storage.objectViewer`; trainer identity: `roles/storage.objectAdmin` — no privilege overlap
+- Secrets in cloud envs ONLY via Secret Manager → Cloud Run env binding; local env via gitignored `.env` (FR-036)
 
 **Scale/Scope** (v1 expectations):
 - O(hundreds) of `(company, CO)` models simultaneously promoted
@@ -135,15 +140,49 @@ forecast-sidecar/
 ├── pyproject.toml             # uv project config: deps, ruff, mypy, pytest
 ├── uv.lock                    # locked dependency graph (committed)
 ├── Dockerfile                 # multi-stage: uv → slim runtime; ENTRYPOINT [], CMD configurable
-├── .dockerignore
+├── .dockerignore              # excludes .env, infra/.terraform/, etc.
+├── .gitignore                 # excludes .env, infra/.terraform/, *.tfstate*
+├── .gitleaks.toml             # SC-017: secret-scanning rules
+├── .lychee.toml               # FR-029/SC-013: link-check config
+├── .env.example               # FR-036: enumerates every var the app reads (committed)
 ├── README.md                  # FR-027: stack, layout, local dev, deploy, contract pointers; links to docs/architecture.md
 ├── docs/
 │   └── architecture.md        # FR-028: system-context diagram, request + training lifecycles, storage/cache/auth, constitution mapping, contract links
-├── .github/workflows/
-│   ├── ci.yml                 # uv sync && ruff && mypy && pytest
-│   ├── deploy.yml             # build → Artifact Registry → Cloud Run service + Job
-│   └── docs.yml               # FR-029/SC-013: relative-link check (e.g. lychee) on README + docs/
-├── .pre-commit-config.yaml    # ruff, mypy, pytest -m "not slow and not gpu"
+├── .gitlab-ci.yml             # FR-033: top-level pipeline; includes the files in ci/ below
+├── ci/
+│   ├── lint.gitlab-ci.yml     # ruff, mypy, gitleaks, lychee
+│   ├── test.gitlab-ci.yml     # pytest (unit + contract + integration markers)
+│   ├── build.gitlab-ci.yml    # docker buildx → push to Artifact Registry (staging + production)
+│   ├── iac.gitlab-ci.yml      # terraform fmt -check, validate, plan (artifact: plan.txt for MR review)
+│   └── deploy.gitlab-ci.yml   # deploy:staging (auto on main); deploy:production (manual, tag-gated)
+├── compose.yaml               # FR-032/FR-037: local stack — sidecar + trainer + fake-gcs-server
+├── docker/
+│   ├── service.entrypoint.sh  # uvicorn launcher used by the service container
+│   ├── trainer.entrypoint.sh  # python -m forecast_sidecar.train_cli wrapper
+│   └── fake-gcs/
+│       └── seed.sh            # pre-creates the local "bucket" and uploads the fixture
+├── infra/                     # FR-031: Terraform; all GCP resources here
+│   ├── modules/
+│   │   ├── cloud_run_service/ # service + Secret Manager wiring + ingress=internal
+│   │   ├── cloud_run_job/     # trainer job + IAM
+│   │   ├── gcs_bucket/        # versioned, lifecycle rules, IAM bindings
+│   │   ├── artifact_registry/ # one repo per env
+│   │   ├── cloud_tasks/       # trainer-trigger queue
+│   │   ├── secret_manager/    # secret + accessor binding
+│   │   ├── network/           # VPC connector / Direct VPC + Cloud NAT (mirrors agent-sidecar)
+│   │   └── iam/               # least-privilege roles per FR-026
+│   └── environments/
+│       ├── staging/
+│       │   ├── main.tf
+│       │   ├── backend.tf     # GCS state, project gs://{prefix}-tfstate-staging
+│       │   ├── variables.tf
+│       │   └── terraform.tfvars  # non-secret env settings
+│       └── production/
+│           ├── main.tf
+│           ├── backend.tf     # GCS state, project gs://{prefix}-tfstate-production
+│           ├── variables.tf
+│           └── terraform.tfvars
+├── .pre-commit-config.yaml    # ruff, mypy, pytest -m "not slow and not gpu", terraform fmt
 ├── configs/
 │   └── lightgbm_defaults.yaml # default LGBMRegressor params (overridable per feature_config)
 ├── src/forecast_sidecar/

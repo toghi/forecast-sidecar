@@ -21,29 +21,27 @@ uv run pytest -m slow         # full integration smoke (5–15s)
 The integration tests use an in-memory GCS fake — no GCP credentials
 required.
 
-## 3. Run the service locally (mocked auth)
+## 3. Run the full stack locally (Docker Compose)
+
+The recommended local flow. Boots the inference service, the trainer
+container, and an in-cluster `fake-gcs-server` so no GCP creds are
+needed.
 
 ```bash
-export FORECAST_BUCKET=local-dev-bucket
-export EXPECTED_AUDIENCE=http://localhost:8080
-export AUTH_BYPASS=1                 # only honored with localhost audience + debug
-export LOG_LEVEL=debug
-export FORECAST_ALLOW_FILE_URLS=1    # lets the trainer accept file:// URLs
-uv run uvicorn forecast_sidecar.main:app --reload --port 8080
+cp .env.example .env                 # fill in any local-only overrides
+docker compose up --build
 ```
 
-In another shell, train a model from the bundled fixture:
+Compose brings up:
 
-```bash
-uv run python -m forecast_sidecar.train_cli \
-  --company-id="00000000-0000-0000-0000-000000000001" \
-  --computed-object-id="00000000-0000-0000-0000-000000000002" \
-  --history-url="file://$(pwd)/tests/fixtures/sample_history.csv" \
-  --feature-config-url="file://$(pwd)/tests/fixtures/sample_feature_config.json" \
-  --output-version=1
-```
+| Service | Port | Purpose |
+|---|---|---|
+| `sidecar` | 8080 | FastAPI inference service (`forecast_sidecar.main:app`) |
+| `trainer` | – | One-shot trainer; runs once at startup against the fixture |
+| `fake-gcs` | 4443 | `fsouza/fake-gcs-server` emulating GCS for local artifacts |
 
-…then call the service:
+After compose is up, the fixture-trained model is already in the local
+bucket. Call the service:
 
 ```bash
 curl -s http://localhost:8080/forecast \
@@ -51,25 +49,54 @@ curl -s http://localhost:8080/forecast \
   -d @tests/fixtures/sample_request.json | jq
 ```
 
-## 4. Build and run the container
+To re-train against a different fixture:
 
 ```bash
-docker build --build-arg GIT_SHA="$(git rev-parse HEAD)" -t forecast-sidecar .
-docker run --rm -p 8080:8080 \
-  -e FORECAST_BUCKET=local-dev-bucket \
-  -e EXPECTED_AUDIENCE=http://localhost:8080 \
-  -e AUTH_BYPASS=1 -e LOG_LEVEL=debug \
-  forecast-sidecar
+docker compose run --rm trainer \
+  python -m forecast_sidecar.train_cli \
+    --company-id="00000000-0000-0000-0000-000000000001" \
+    --computed-object-id="00000000-0000-0000-0000-000000000002" \
+    --history-url="file:///fixtures/sample_history.csv" \
+    --feature-config-url="file:///fixtures/sample_feature_config.json" \
+    --output-version=2
 ```
 
-Run the trainer from the same image by overriding `CMD`:
+## 4. Run the service without Docker (uv)
+
+When you want fast iteration on Python code only:
 
 ```bash
-docker run --rm forecast-sidecar \
-  python -m forecast_sidecar.train_cli --help
+cp .env.example .env
+uv sync
+uv run uvicorn forecast_sidecar.main:app --reload --port 8080
 ```
 
-## 5. Where things live
+`pydantic-settings` reads `.env` automatically. `AUTH_BYPASS=1` in the
+example file is honored only because `EXPECTED_AUDIENCE` resolves to
+`http://localhost:*` and `LOG_LEVEL=debug` — the same gate that
+prevents the bypass from being usable in any cloud env.
+
+## 5. Working on infrastructure (Terraform + GitLab CI)
+
+```bash
+cd infra/environments/staging
+terraform init    # uses GCS backend; needs gcloud creds with state-bucket access
+terraform fmt -check
+terraform validate
+terraform plan -out=plan.tfplan
+```
+
+Apply runs in CI only (FR-035). Locally, `plan` is the only command
+you should expect to run. Modules live in `infra/modules/` and are
+shared between `staging` and `production` — change a module, both envs'
+`plan` will move on the next CI run.
+
+The full pipeline (`.gitlab-ci.yml`) defines: `lint`, `test`, `build`,
+`iac-validate`, `deploy:staging` (auto on `main`), `iac-apply:production`
+(manual, tag-gated), `deploy:production` (manual, tag-gated). See
+`ci/*.gitlab-ci.yml` for stage definitions.
+
+## 6. Where things live
 
 - **Architecture overview**: [docs/architecture.md](../../docs/architecture.md) — start here for the mental model
 - **README**: [README.md](../../README.md) — landing page; links here and to the contracts below
@@ -78,17 +105,21 @@ docker run --rm forecast-sidecar \
 - Wire schemas: [src/forecast_sidecar/schemas.py](../../src/forecast_sidecar/schemas.py)
 - Storage layer: [src/forecast_sidecar/storage.py](../../src/forecast_sidecar/storage.py)
 - Model code: [src/forecast_sidecar/model/](../../src/forecast_sidecar/model/)
+- Local stack: [compose.yaml](../../compose.yaml), [docker/](../../docker/)
+- Infra: [infra/modules/](../../infra/modules/), [infra/environments/](../../infra/environments/)
+- CI/CD: [.gitlab-ci.yml](../../.gitlab-ci.yml), [ci/](../../ci/)
+- Env contract: [.env.example](../../.env.example)
 - Feature config schema: [contracts/feature_config.schema.json](contracts/feature_config.schema.json)
 - HTTP contract: [contracts/openapi.yaml](contracts/openapi.yaml)
 - Trainer contract: [contracts/train_cli.md](contracts/train_cli.md)
 
-## 6. The constitution
+## 7. The constitution
 
 `/Users/arthur/sources/forecast-sidecar/.specify/memory/constitution.md`
 governs implementation choices. Skim it before opening a PR — it is
 short.
 
-## 7. Common tasks
+## 8. Common tasks
 
 | Task | Command |
 |---|---|
@@ -99,3 +130,9 @@ short.
 | Type-check | `uv run mypy src/` |
 | Run smoke training | `uv run pytest tests/integration/test_train_smoke.py -v` |
 | Generate OpenAPI from running service | `curl http://localhost:8080/openapi.json | jq` |
+| Local stack up | `docker compose up --build` |
+| Local stack down | `docker compose down -v` (drops fake-gcs volume) |
+| Terraform plan (staging) | `cd infra/environments/staging && terraform plan` |
+| Terraform plan (production) | `cd infra/environments/production && terraform plan` |
+| Run secret scan locally | `gitleaks detect --redact -v` |
+| Run link check locally | `lychee README.md docs/ specs/` |

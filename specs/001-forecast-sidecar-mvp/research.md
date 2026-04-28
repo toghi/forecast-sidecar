@@ -404,6 +404,203 @@ locks the *shape* so tasks can be enumerated against it.
 
 ---
 
+## R12. Terraform layout + GitLab CI/CD + three environments
+
+**Question**: How is `infra/` organized so staging and production share
+the same modules but cannot share state, and how does GitLab CI gate
+promotion?
+
+**Decision** — *infra layout*:
+
+```
+infra/
+├── modules/
+│   ├── cloud_run_service/   # service + Secret Manager → env wiring + ingress=internal
+│   ├── cloud_run_job/       # trainer; same image, override CMD
+│   ├── gcs_bucket/          # versioning on, lifecycle (delete after N days), per-env IAM
+│   ├── artifact_registry/   # one repo per env, immutable tags
+│   ├── cloud_tasks/         # weekly retraining queue
+│   ├── secret_manager/      # secret + secretAccessor at the secret level
+│   ├── network/             # VPC connector / Direct VPC + Cloud NAT (mirrors agent-sidecar)
+│   └── iam/                 # least-privilege roles per FR-026
+└── environments/
+    ├── staging/             # GCP project: {prefix}-forecast-staging
+    │   ├── main.tf          # invokes modules with staging vars
+    │   ├── backend.tf       # GCS state at gs://{prefix}-tfstate-staging/forecast-sidecar/
+    │   ├── variables.tf
+    │   └── terraform.tfvars # non-secret env knobs (region, instance scale, log level)
+    └── production/          # GCP project: {prefix}-forecast-production
+        ├── main.tf
+        ├── backend.tf       # gs://{prefix}-tfstate-production/forecast-sidecar/
+        ├── variables.tf
+        └── terraform.tfvars
+```
+
+**Decision** — *GitLab CI/CD pipeline*:
+
+`.gitlab-ci.yml` declares stages and `include:`s modular files under
+`ci/`. Stage order:
+
+1. `lint` — `ruff check`, `mypy --strict src/`, `gitleaks detect`,
+   `terraform fmt -check`, `lychee` over `README.md` + `docs/`.
+2. `test` — `pytest -m "not slow"` (fast); `pytest -m "slow"` runs only
+   on `main` and on tags to keep MR feedback under 3 min.
+3. `build` — Docker Buildx → push to staging Artifact Registry on every
+   pipeline; additionally tag and push to production Artifact Registry
+   on pipelines from a `vX.Y.Z` tag.
+4. `iac-validate` — `terraform validate` and `terraform plan` for both
+   `environments/staging/` and `environments/production/`. Plan output
+   uploaded as a job artifact (FR-034).
+5. `deploy:staging` — `terraform apply -auto-approve` + `gcloud run
+   deploy` + `gcloud run jobs update`. Runs automatically on `main`,
+   never on MRs (FR-035).
+6. `iac-apply:production` — `terraform apply` against production. **Manual**
+   (`when: manual`), gated on (a) the pipeline being for a `vX.Y.Z` tag
+   (`rules: - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/`), and (b) the
+   environment block (`environment: production`) which GitLab gates on
+   protected-environment approvers (FR-035, SC-016).
+7. `deploy:production` — `gcloud run deploy --image=<production-tag>` +
+   `gcloud run jobs update`. Also manual, runs after `iac-apply:production`.
+8. `drift-check` (scheduled, 24h cadence) — `terraform plan` on both
+   envs; non-empty plan → CI failure + Sentry alert (SC-015).
+
+GitLab "protected environments" + "protected branches" are configured
+so only `main` triggers the staging job, only tags trigger the
+production jobs, and only specific maintainers can approve the
+production manual gate.
+
+**Decision** — *Terraform state*:
+
+- One GCS bucket per env, named `gs://{prefix}-tfstate-{env}/`,
+  versioning + uniform-bucket-level-access on, deletion protection
+  enabled.
+- State buckets live in their respective env's GCP project (so creds
+  for staging cannot read production state).
+- State locking via GCS object generation (Terraform's GCS backend has
+  built-in locking).
+
+**Rationale**:
+- Per-env GCP project + per-env state bucket gives clean blast-radius
+  isolation. A leaked staging credential reads/writes nothing in
+  production.
+- `include:`-based GitLab CI keeps `.gitlab-ci.yml` short and lets
+  reviewers diff stage logic independently.
+- `terraform plan` artifact on every MR makes infra changes review-able
+  the same way as code changes.
+
+**Alternatives considered**:
+- *Terraform Cloud / TFC remote runs* — rejected for v1; GitLab
+  artifacts + protected environments give us the same audit trail
+  without an extra vendor.
+- *One GCP project for both envs with namespaced resources* — rejected;
+  IAM and quota isolation is materially weaker.
+- *GitHub Actions* — explicitly out: repository is on GitLab.
+- *Terragrunt* — adds a layer for very little gain at two envs;
+  re-evaluate if we add a third cloud env.
+
+---
+
+## R13. Environment-variable sourcing + network isolation
+
+**Question**: How are env vars supplied per environment (FR-036), and
+how is the service kept off the public internet (FR-038, FR-039)?
+
+**Decision** — *env-variable sourcing*:
+
+| Environment | Mechanism | Loader |
+|---|---|---|
+| Local | `.env` at repo root (gitignored), `.env.example` committed. | Docker Compose `env_file: .env`; the application's `pydantic-settings.BaseSettings(env_file=".env")` reads the same file when run outside compose. |
+| Staging | Non-secret vars set on the Cloud Run resource by Terraform; secrets stored in Secret Manager (one secret per credential), bound to the service via Cloud Run's native Secret integration. | Cloud Run injects them as plain env vars at boot; `pydantic-settings` reads them as it would locally. |
+| Production | Same as staging, separate GCP project, separate Secret Manager secrets. | Same. |
+
+`pydantic-settings.BaseSettings.model_config = SettingsConfigDict(
+env_file=".env", env_file_encoding="utf-8", extra="ignore")` — a single
+loader works for all three envs because Cloud Run-injected env vars
+take precedence over `.env` (which doesn't exist in the container in
+cloud envs).
+
+A CI job (`lint` stage) introspects `Settings.model_fields` and diffs
+against `.env.example` keys (SC-020); divergence fails the job.
+
+**Decision** — *network isolation*:
+
+The staging and production Cloud Run services are configured by
+Terraform with:
+
+- `ingress = "INTERNAL"` (or `"INTERNAL_AND_CLOUD_LOAD_BALANCING"` only
+  if a private internal LB is needed in front of it). The default is
+  `INTERNAL` — the simplest path that satisfies FR-038.
+- A **VPC connector** (Serverless VPC Access) or **Direct VPC egress**,
+  depending on what the existing `toolsname-agent-sidecar` uses; the
+  module exposes both knobs and the env's `terraform.tfvars` picks one.
+- The network module also provisions:
+  - A **Cloud NAT** on the forecast project's VPC for any outbound
+    traffic that bypasses Private Google Access.
+  - **Private Google Access** on the relevant subnet, so traffic to
+    GCS, Secret Manager, and the OIDC JWKS endpoint stays on Google's
+    network without traversing NAT.
+  - A peering or Shared-VPC attachment to the calling backend's VPC,
+    chosen to mirror the agent sidecar.
+
+Backend → forecast traffic flow:
+
+```
+backend Cloud Run (in backend project's VPC)
+    → VPC connector
+    → (Shared VPC | peered VPC) to forecast project's network
+    → Cloud Run service (ingress=INTERNAL)
+    → OIDC verify (JWKS via Private Google Access)
+    → GCS (Private Google Access)
+    → response back through the same path
+```
+
+Defense in depth: even on a misconfiguration where the network ACL
+permits an unintended caller, OIDC verification (FR-018, FR-019, FR-020)
+still rejects the request. Conversely, even a leaked OIDC token cannot
+reach the service from the public internet because `ingress=INTERNAL`
+short-circuits before TLS terminates.
+
+A scheduled CI job (cron, daily) runs an external probe against the
+staging and production hostnames and asserts the request fails before
+TLS handshake — implements SC-018.
+
+**Open dependency**: the *exact* network primitive (Shared VPC vs
+peering, VPC connector vs Direct VPC) MUST mirror the existing
+`toolsname-agent-sidecar` Terraform. The planner reads that repo's
+`infra/modules/network/` (or equivalent) before scaffolding the module
+here. If that pattern is unavailable at scaffold time, the default is
+**Direct VPC egress + VPC peering** — the GCP-recommended modern path
+for new Cloud Run services that need cross-project private reachability
+without a Shared VPC org policy in place.
+
+**Rationale**:
+- Single `pydantic-settings` loader for all envs eliminates a category
+  of "works on my laptop" bugs.
+- `.env`-only-for-local is a well-understood convention; nothing
+  surprising for new contributors.
+- Secret Manager via Cloud Run's native integration is the official GCP
+  pattern; the secret never lands in Terraform state because we bind by
+  reference (`secretKeyRef`-style) and grant accessor at the secret level.
+- `ingress=INTERNAL` + VPC private path is the standard GCP topology
+  for "internal sidecar" services and is what the existing agent sidecar
+  uses.
+
+**Alternatives considered**:
+- *Storing secrets in GitLab CI variables and injecting at deploy time*
+  — rejected: the secret would land in Cloud Run revision history and
+  in pipeline logs unless masked perfectly. Secret Manager is purpose-
+  built and audit-logged.
+- *`ingress=ALL` + IAM-only auth* — rejected by FR-038. IAM is necessary
+  but not sufficient; the spec mandates the service is unreachable from
+  the public internet.
+- *API Gateway / Cloud Endpoints in front* — adds a hop and a billable
+  product without solving anything that `ingress=INTERNAL` doesn't.
+- *Mounting Secret Manager via the volume integration vs the env-var
+  integration* — rejected for v1; env vars are simpler and our secrets
+  are short strings.
+
+---
+
 ## Open items deferred to plan / tasks
 
 - **Region defaults / bucket naming / Sentry project / trainer trigger /
