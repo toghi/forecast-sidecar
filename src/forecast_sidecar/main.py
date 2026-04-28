@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager
 from typing import Annotated, Any
 
 import structlog
-from fastapi import Depends, FastAPI, HTTPException, Request, status
+from fastapi import Body, Depends, FastAPI, HTTPException, Request, status
 from fastapi.responses import JSONResponse
 
 from forecast_sidecar import __version__
@@ -94,38 +94,38 @@ def _err(
 
 @app.post("/forecast", response_model=ForecastResponse)
 async def forecast(
-    request: ForecastRequest,
-    http_request: Request,
+    payload: ForecastRequest,
+    http: Request,
     claims: Annotated[Claims, Depends(verify_oidc_token)],
     storage: Annotated[GCSStorage, Depends(get_storage)],
     cache: Annotated[ModelCache, Depends(get_cache)],
 ) -> ForecastResponse:
     log = structlog.get_logger()
-    trace_ctx = extract_trace_context(http_request.headers)
+    trace_ctx = extract_trace_context(http.headers)
     structlog.contextvars.bind_contextvars(
-        request_id=http_request.headers.get("x-request-id", ""),
-        company_id=str(request.company_id),
-        computed_object_id=str(request.computed_object_id),
+        request_id=http.headers.get("x-request-id", ""),
+        company_id=str(payload.company_id),
+        computed_object_id=str(payload.computed_object_id),
         caller=claims.email,
         **trace_ctx,
     )
     started = time.monotonic()
 
     with tag_sentry_scope(
-        company_id=str(request.company_id),
-        computed_object_id=str(request.computed_object_id),
+        company_id=str(payload.company_id),
+        computed_object_id=str(payload.computed_object_id),
         mode="service",
     ):
         try:
             model, metadata = await load_or_fetch(
                 cache,
                 storage,
-                company_id=request.company_id,
-                computed_object_id=request.computed_object_id,
-                model_version=request.model_version,
+                company_id=payload.company_id,
+                computed_object_id=payload.computed_object_id,
+                model_version=payload.model_version,
             )
             cache_hit_indicator = 1  # populated; refined when cache stats land
-            response = build_forecast_response(request, model=model, metadata=metadata)
+            response = build_forecast_response(payload, model=model, metadata=metadata)
         except NotYetTrainedError as exc:
             raise _err(
                 status.HTTP_404_NOT_FOUND,

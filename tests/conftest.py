@@ -19,17 +19,22 @@ FIXTURES = Path(__file__).parent / "fixtures"
 
 @pytest.fixture
 def synthetic_series() -> pl.DataFrame:
-    """Deterministic 24-month by 3-series long-format frame."""
+    """Deterministic 72-month by 3-series long-format frame.
+
+    72 months gives enough headroom for `PredictionIntervals(n_windows=5, h=12)`
+    which requires ``h * n_windows + 1 = 61`` samples per series after
+    lag-induced row drops.
+    """
     rng = np.random.default_rng(seed=42)
     rows: list[dict[str, Any]] = []
     base = {"s_0": 1000.0, "s_1": 500.0, "s_2": 2000.0}
-    growth = {"s_0": 70.0, "s_1": 35.0, "s_2": 120.0}
+    growth = {"s_0": 25.0, "s_1": 12.0, "s_2": 40.0}
     seg = {"s_0": "smb", "s_1": "mid", "s_2": "ent"}
     region = {"s_0": "emea", "s_1": "amer", "s_2": "apac"}
 
     for sid in ("s_0", "s_1", "s_2"):
-        for i in range(24):
-            year = 2024 + i // 12
+        for i in range(72):
+            year = 2020 + i // 12
             month = (i % 12) + 1
             ds = f"{year}-{month:02d}-01"
             seasonal = 50 * np.sin(2 * np.pi * (month - 1) / 12)
