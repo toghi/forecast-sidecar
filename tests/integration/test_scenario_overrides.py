@@ -35,9 +35,7 @@ def test_override_changes_only_targeted_period(
 
     target_period = sample_request_dict["future_features"][4]["period"]
     overrides = {target_period: {"active_clients": 999}}
-    with_override = _post(
-        app_client, {**sample_request_dict, "scenario_overrides": overrides}
-    )
+    with_override = _post(app_client, {**sample_request_dict, "scenario_overrides": overrides})
 
     diffs = [
         (b["period"], b["point"], o["point"])
