@@ -1,0 +1,236 @@
+openapi: 3.0.3
+info:
+  title: forecast-sidecar
+  version: 0.1.0
+  description: |
+    Per-(company, computed_object) time-series forecasting via MLForecast +
+    LightGBM with calibrated 80%/95% conformal intervals. Internal
+    service-to-service only; OIDC-authenticated.
+  contact:
+    name: forecast-sidecar maintainers
+servers:
+  - url: https://{deployment}.run.app
+    variables:
+      deployment:
+        default: forecast-sidecar-prod
+security:
+  - oidcBearer: []
+paths:
+  /forecast:
+    post:
+      operationId: forecast
+      summary: Run inference for a trained (company, CO) model
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ForecastRequest'
+      responses:
+        '200':
+          description: Forecast produced
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ForecastResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/ModelNotFound'
+        '409':
+          $ref: '#/components/responses/ModelNotReady'
+        '503':
+          $ref: '#/components/responses/StorageUnavailable'
+  /healthz:
+    get:
+      operationId: healthz
+      summary: Liveness probe
+      security: []
+      responses:
+        '200':
+          description: Process is up
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+  /readyz:
+    get:
+      operationId: readyz
+      summary: Readiness probe (checks GCS reachability)
+      security: []
+      responses:
+        '200':
+          description: Service can accept traffic
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadyResponse'
+        '503':
+          description: Service cannot accept traffic
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadyResponse'
+components:
+  securitySchemes:
+    oidcBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        Google OIDC ID token issued for the configured audience
+        (this service's Cloud Run URL). Verified via google-auth.
+  schemas:
+    ForecastRequest:
+      type: object
+      additionalProperties: false
+      required: [company_id, computed_object_id, horizon_periods, future_features]
+      properties:
+        company_id:
+          type: string
+          format: uuid
+        computed_object_id:
+          type: string
+          format: uuid
+        model_version:
+          type: integer
+          minimum: 1
+          nullable: true
+          description: When omitted, resolves to latest.json.version
+        horizon_periods:
+          type: integer
+          minimum: 1
+          maximum: 60
+        future_features:
+          type: array
+          items:
+            $ref: '#/components/schemas/FuturePeriodFeatures'
+          minItems: 1
+        scenario_overrides:
+          type: object
+          additionalProperties:
+            type: object
+            additionalProperties: true
+          nullable: true
+          description: |
+            { "<period ISO date>": { "<feature_name>": <value>, ... }, ... }
+            Keys must appear in future_features periods. Feature names
+            must be in the model's declared future_exog.
+    FuturePeriodFeatures:
+      type: object
+      additionalProperties: true
+      required: [period]
+      properties:
+        period:
+          type: string
+          format: date
+          description: |
+            ISO date matching the declared frequency (e.g. month start
+            for freq=MS).
+    ForecastResponse:
+      type: object
+      additionalProperties: false
+      required: [model_version, trained_at, forecast, model_metrics]
+      properties:
+        model_version:
+          type: integer
+        trained_at:
+          type: string
+          format: date-time
+        forecast:
+          type: array
+          items:
+            $ref: '#/components/schemas/ForecastPoint'
+        model_metrics:
+          $ref: '#/components/schemas/ModelMetricsSummary'
+    ForecastPoint:
+      type: object
+      additionalProperties: false
+      required: [period, point, lo80, hi80, lo95, hi95]
+      properties:
+        period: { type: string, format: date }
+        point:  { type: number }
+        lo80:   { type: number }
+        hi80:   { type: number }
+        lo95:   { type: number }
+        hi95:   { type: number }
+    ModelMetricsSummary:
+      type: object
+      additionalProperties: false
+      required: [training_mae, training_smape, coverage_80, coverage_95]
+      properties:
+        training_mae:    { type: number }
+        training_smape:  { type: number }
+        coverage_80:     { type: number }
+        coverage_95:     { type: number }
+    HealthResponse:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+    ReadyResponse:
+      type: object
+      additionalProperties: false
+      required: [status, gcs_reachable, models_cached]
+      properties:
+        status:
+          type: string
+          enum: [ok, unavailable]
+        gcs_reachable: { type: boolean }
+        models_cached: { type: integer, minimum: 0 }
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      required: [error, detail]
+      properties:
+        error:
+          type: string
+          enum:
+            - invalid_token
+            - bad_request
+            - model_not_found
+            - model_not_ready
+            - storage_unavailable
+        detail:
+          type: string
+        missing_columns:
+          type: array
+          items: { type: string }
+          nullable: true
+        expected_rows:
+          type: integer
+          nullable: true
+        actual_rows:
+          type: integer
+          nullable: true
+  responses:
+    BadRequest:
+      description: Schema validation, missing features, horizon mismatch
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    Unauthorized:
+      description: Missing or invalid OIDC token
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    ModelNotFound:
+      description: No model found for (company_id, computed_object_id, model_version)
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    ModelNotReady:
+      description: Model exists but is not ready (training in progress or failed)
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    StorageUnavailable:
+      description: GCS unreachable
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
