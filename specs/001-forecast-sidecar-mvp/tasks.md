@@ -157,12 +157,12 @@ Single project, src layout (per [plan.md](plan.md) §Project Structure):
 
 ### Tests for User Story 3 ⚠️ Write first
 
-- [ ] T054 [P] [US3] Integration test in `tests/integration/test_scenario_overrides.py`: baseline vs override for `period=P5, feature=active_clients` → only P5 differs; empty `scenario_overrides` → identical to baseline; override naming a feature outside `future_exog` → 400 with explicit detail
+- [X] T054 [P] [US3] Integration test in `tests/integration/test_scenario_overrides.py`: baseline vs override for `period=P5, feature=active_clients` → only P5 differs; empty `scenario_overrides` → identical to baseline; override naming a feature outside `future_exog` → 400 with explicit detail
 
 ### Implementation for User Story 3
 
-- [ ] T055 [US3] Extend `model/predict.py` `predict()` (depends on T041) to accept `scenario_overrides`; before passing `future_df` to `MLForecast.predict`, validate every override key is in `metadata.feature_config.future_exog` (raise `BadScenarioOverrideError` → 400 if not), then in-place apply each `{period: {feature: value}}` to the `future_df`
-- [ ] T056 [US3] Update `src/forecast_sidecar/schemas.py` `ForecastRequest.scenario_overrides` type if needed and add a `model_validator` ensuring all override-period keys appear in `future_features` periods (raise 400 with `bad_request` detail otherwise)
+- [X] T055 [US3] Extend `model/predict.py` `predict()` (depends on T041) to accept `scenario_overrides`; before passing `future_df` to `MLForecast.predict`, validate every override key is in `metadata.feature_config.future_exog` (raise `BadScenarioOverrideError` → 400 if not), then in-place apply each `{period: {feature: value}}` to the `future_df`
+- [X] T056 [US3] Update `src/forecast_sidecar/schemas.py` `ForecastRequest.scenario_overrides` type if needed and add a `model_validator` ensuring all override-period keys appear in `future_features` periods (raise 400 with `bad_request` detail otherwise)
 
 **Checkpoint**: User Story 3 fully functional. T054 green. US1 still passes (override path is opt-in via the `scenario_overrides` field).
 
@@ -176,12 +176,12 @@ Single project, src layout (per [plan.md](plan.md) §Project Structure):
 
 ### Tests for User Story 4 ⚠️ Write first
 
-- [ ] T057 [P] [US4] API test in `tests/api/test_health_ready.py`: `/healthz` returns `{"status":"ok"}` with no auth; `/readyz` returns 200 with `gcs_reachable: true` and `models_cached: 0` on a fresh app; `/readyz` returns 503 when GCS client raises on a cheap probe call
+- [X] T057 [P] [US4] API test in `tests/api/test_health_ready.py`: `/healthz` returns `{"status":"ok"}` with no auth; `/readyz` returns 200 with `gcs_reachable: true` and `models_cached: 0` on a fresh app; `/readyz` returns 503 when GCS client raises on a cheap probe call
 
 ### Implementation for User Story 4
 
-- [ ] T058 [US4] Implement `GET /healthz` in `src/forecast_sidecar/main.py` (depends on T022) — no auth dep, returns `HealthResponse(status="ok")`
-- [ ] T059 [US4] Implement `GET /readyz` in `src/forecast_sidecar/main.py` — no auth dep, performs a cheap GCS probe (e.g. `bucket.exists()` against `FORECAST_BUCKET` with a 1s timeout) wrapped in `asyncio.to_thread`; returns `ReadyResponse(status, gcs_reachable, models_cached=len(cache._model_cache))`; on failure returns 503 with the same shape
+- [X] T058 [US4] Implement `GET /healthz` in `src/forecast_sidecar/main.py` (depends on T022) — no auth dep, returns `HealthResponse(status="ok")`
+- [X] T059 [US4] Implement `GET /readyz` in `src/forecast_sidecar/main.py` — no auth dep, performs a cheap GCS probe (e.g. `bucket.exists()` against `FORECAST_BUCKET` with a 1s timeout) wrapped in `asyncio.to_thread`; returns `ReadyResponse(status, gcs_reachable, models_cached=len(cache._model_cache))`; on failure returns 503 with the same shape
 
 **Checkpoint**: All four user stories independently functional. The local `compose.yaml` healthcheck targets `/healthz`; the readiness probe is wired in Cloud Run by Phase 8.
 

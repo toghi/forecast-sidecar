@@ -4,6 +4,7 @@ route via the optional `scenario_overrides` field; US4 adds /healthz +
 
 from __future__ import annotations
 
+import asyncio
 import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -29,7 +30,12 @@ from forecast_sidecar.observability import (
     init_structlog,
     tag_sentry_scope,
 )
-from forecast_sidecar.schemas import ForecastRequest, ForecastResponse
+from forecast_sidecar.schemas import (
+    ForecastRequest,
+    ForecastResponse,
+    HealthResponse,
+    ReadyResponse,
+)
 from forecast_sidecar.storage import (
     GCSStorage,
     ModelNotFoundError,
@@ -74,11 +80,30 @@ def get_app_settings() -> Settings:
     return app.state.settings  # type: ignore[no-any-return]
 
 
-@app.get("/healthz", include_in_schema=False)
-async def healthz() -> dict[str, str]:
-    """Liveness stub. The real US4 implementation (T058) returns
-    `HealthResponse`; this minimal version unblocks compose health checks."""
-    return {"status": "ok"}
+@app.get("/healthz", response_model=HealthResponse)
+async def healthz() -> HealthResponse:
+    """Liveness probe — no auth, no dependency checks (FR-018, US4)."""
+    return HealthResponse()
+
+
+@app.get("/readyz", response_model=ReadyResponse)
+async def readyz(
+    storage: Annotated[GCSStorage, Depends(get_storage)],
+    cache: Annotated[ModelCache, Depends(get_cache)],
+) -> JSONResponse:
+    """Readiness probe — verifies GCS reachability and reports cache fill (US4).
+
+    Returns 200 with `status="ok"` when the bucket is reachable; 503 with
+    `status="unavailable"` otherwise so a load balancer doesn't route traffic
+    to an instance whose model store is offline."""
+    reachable = await asyncio.to_thread(storage.reachable)
+    body = ReadyResponse(
+        status="ok" if reachable else "unavailable",
+        gcs_reachable=reachable,
+        models_cached=cache.model_count,
+    )
+    code = status.HTTP_200_OK if reachable else status.HTTP_503_SERVICE_UNAVAILABLE
+    return JSONResponse(status_code=code, content=body.model_dump())
 
 
 def _err(
