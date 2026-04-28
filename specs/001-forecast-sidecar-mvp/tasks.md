@@ -38,19 +38,19 @@ Single project, src layout (per [plan.md](plan.md) §Project Structure):
 
 **Purpose**: Repository scaffolding, dependency installation, lint/type/test config, local-stack skeleton. No business logic yet.
 
-- [ ] T001 Create the full directory tree: `src/forecast_sidecar/model/`, `tests/{unit,contract,integration,api,fakes,fixtures}/`, `configs/`, `docker/fake-gcs/`, `infra/modules/{cloud_run_service,cloud_run_job,gcs_bucket,artifact_registry,cloud_tasks,secret_manager,network,iam}/`, `infra/environments/{staging,production}/`, `ci/`, `docs/`
-- [ ] T002 Initialize the uv project at `pyproject.toml` (project name `forecast-sidecar`, Python `>=3.11,<3.12`, src layout, package `forecast_sidecar`)
-- [ ] T003 Add runtime deps to `pyproject.toml`: `uv add mlforecast lightgbm utilsforecast fastapi 'uvicorn[standard]' 'pydantic>=2' pydantic-settings google-cloud-storage google-auth structlog sentry-sdk polars pandas pyarrow joblib click cachetools`
-- [ ] T004 Add dev deps to `pyproject.toml`: `uv add --dev pytest pytest-asyncio httpx freezegun ruff mypy types-cachetools jsonschema`
-- [ ] T005 Add `[tool.ruff]` and `[tool.ruff.lint]` config to `pyproject.toml` (line-length 100, target-version py311, rules E F I N UP B S RUF, `per-file-ignores` for `tests/*` to allow `S101` asserts)
-- [ ] T006 Add `[tool.mypy]` config to `pyproject.toml` (strict mode, `files = ["src"]`, ignore_missing_imports for mlforecast/lightgbm/utilsforecast/google.* until stubs are bundled)
-- [ ] T007 Add `[tool.pytest.ini_options]` to `pyproject.toml` declaring markers `slow`, `gpu`, `integration`, `requires_data`; default `addopts = "-m 'not slow and not gpu'"`
-- [ ] T008 [P] Create `.gitignore` with `.env`, `.venv`, `__pycache__/`, `**/__pycache__/`, `*.pyc`, `.mypy_cache/`, `.ruff_cache/`, `.pytest_cache/`, `infra/**/.terraform/`, `infra/**/.terraform.lock.hcl` (commit), `*.tfplan`, `*.tfstate*`, `models/`, `data/`, `htmlcov/`, `.coverage`
-- [ ] T009 [P] Create `.dockerignore` excluding `.git/`, `.venv/`, `__pycache__/`, `.mypy_cache/`, `.ruff_cache/`, `.pytest_cache/`, `tests/`, `infra/`, `docs/`, `specs/`, `.env`, `*.tfstate*`
-- [ ] T010 [P] Create `.pre-commit-config.yaml` with hooks: `ruff format`, `ruff check --fix`, `mypy --strict src/`, `pytest -m "not slow and not gpu"`, `terraform fmt -recursive infra/`, `gitleaks detect --staged --redact`
-- [ ] T011 [P] Create `.env.example` listing every variable from data-model §4.1 with placeholder values and one-line comments (`PORT`, `FORECAST_BUCKET`, `EXPECTED_AUDIENCE`, `ALLOWED_CALLERS`, `MODEL_CACHE_SIZE`, `MODEL_CACHE_TTL_SECONDS`, `LATEST_POINTER_TTL_SECONDS`, `SENTRY_DSN`, `SENTRY_ENVIRONMENT`, `LOG_LEVEL`, `AUTH_BYPASS`, `GIT_SHA`, `FORECAST_ALLOW_FILE_URLS`, `GCS_FAKE_HOST`)
-- [ ] T012 [P] Create `configs/lightgbm_defaults.yaml` with the default LGBMRegressor params from data-model §4.2 (`n_estimators: 500`, `learning_rate: 0.05`, `num_leaves: 31`, `max_depth: -1`, `min_data_in_leaf: 20`, `objective: regression`, `metric: mae`, `verbosity: -1`)
-- [ ] T013 [P] Create empty `src/forecast_sidecar/__init__.py` and `src/forecast_sidecar/model/__init__.py`
+- [X] T001 Create the full directory tree: `src/forecast_sidecar/model/`, `tests/{unit,contract,integration,api,fakes,fixtures}/`, `configs/`, `docker/fake-gcs/`, `infra/modules/{cloud_run_service,cloud_run_job,gcs_bucket,artifact_registry,cloud_tasks,secret_manager,network,iam}/`, `infra/environments/{staging,production}/`, `ci/`, `docs/`
+- [X] T002 Initialize the uv project at `pyproject.toml` (project name `forecast-sidecar`, Python `>=3.11,<3.12`, src layout, package `forecast_sidecar`)
+- [X] T003 Add runtime deps to `pyproject.toml`: `uv add mlforecast lightgbm utilsforecast fastapi 'uvicorn[standard]' 'pydantic>=2' pydantic-settings google-cloud-storage google-auth structlog sentry-sdk polars pandas pyarrow joblib click cachetools`
+- [X] T004 Add dev deps to `pyproject.toml`: `uv add --dev pytest pytest-asyncio httpx freezegun ruff mypy types-cachetools jsonschema`
+- [X] T005 Add `[tool.ruff]` and `[tool.ruff.lint]` config to `pyproject.toml` (line-length 100, target-version py311, rules E F I N UP B S RUF, `per-file-ignores` for `tests/*` to allow `S101` asserts)
+- [X] T006 Add `[tool.mypy]` config to `pyproject.toml` (strict mode, `files = ["src"]`, ignore_missing_imports for mlforecast/lightgbm/utilsforecast/google.* until stubs are bundled)
+- [X] T007 Add `[tool.pytest.ini_options]` to `pyproject.toml` declaring markers `slow`, `gpu`, `integration`, `requires_data`; default `addopts = "-m 'not slow and not gpu'"`
+- [X] T008 [P] Create `.gitignore` with `.env`, `.venv`, `__pycache__/`, `**/__pycache__/`, `*.pyc`, `.mypy_cache/`, `.ruff_cache/`, `.pytest_cache/`, `infra/**/.terraform/`, `infra/**/.terraform.lock.hcl` (commit), `*.tfplan`, `*.tfstate*`, `models/`, `data/`, `htmlcov/`, `.coverage`
+- [X] T009 [P] Create `.dockerignore` excluding `.git/`, `.venv/`, `__pycache__/`, `.mypy_cache/`, `.ruff_cache/`, `.pytest_cache/`, `tests/`, `infra/`, `docs/`, `specs/`, `.env`, `*.tfstate*`
+- [X] T010 [P] Create `.pre-commit-config.yaml` with hooks: `ruff format`, `ruff check --fix`, `mypy --strict src/`, `pytest -m "not slow and not gpu"`, `terraform fmt -recursive infra/`, `gitleaks detect --staged --redact`
+- [X] T011 [P] Create `.env.example` listing every variable from data-model §4.1 with placeholder values and one-line comments (`PORT`, `FORECAST_BUCKET`, `EXPECTED_AUDIENCE`, `ALLOWED_CALLERS`, `MODEL_CACHE_SIZE`, `MODEL_CACHE_TTL_SECONDS`, `LATEST_POINTER_TTL_SECONDS`, `SENTRY_DSN`, `SENTRY_ENVIRONMENT`, `LOG_LEVEL`, `AUTH_BYPASS`, `GIT_SHA`, `FORECAST_ALLOW_FILE_URLS`, `GCS_FAKE_HOST`)
+- [X] T012 [P] Create `configs/lightgbm_defaults.yaml` with the default LGBMRegressor params from data-model §4.2 (`n_estimators: 500`, `learning_rate: 0.05`, `num_leaves: 31`, `max_depth: -1`, `min_data_in_leaf: 20`, `objective: regression`, `metric: mae`, `verbosity: -1`)
+- [X] T013 [P] Create empty `src/forecast_sidecar/__init__.py` and `src/forecast_sidecar/model/__init__.py`
 
 **Checkpoint**: `uv sync` succeeds; `uv run ruff check .` and `uv run mypy src/` pass on empty package; `uv run pytest` discovers zero tests.
 

@@ -1,0 +1,47 @@
+# Pre-commit hooks per Constitution v1.0.0 + plan.md gates.
+# Run on every commit; CI re-runs the same set on push.
+repos:
+  - repo: local
+    hooks:
+      - id: ruff-format
+        name: ruff format
+        entry: uv run ruff format
+        language: system
+        types: [python]
+        pass_filenames: false
+
+      - id: ruff-check
+        name: ruff check
+        entry: uv run ruff check --fix
+        language: system
+        types: [python]
+        pass_filenames: false
+
+      - id: mypy
+        name: mypy --strict
+        entry: uv run mypy src/
+        language: system
+        types: [python]
+        pass_filenames: false
+
+      - id: pytest-fast
+        name: pytest (fast tests only)
+        entry: uv run pytest -m "not slow and not gpu"
+        language: system
+        types: [python]
+        pass_filenames: false
+        stages: [pre-commit]
+
+      - id: terraform-fmt
+        name: terraform fmt
+        entry: terraform fmt -recursive infra/
+        language: system
+        files: ^infra/.*\.tf$
+        pass_filenames: false
+
+      # Optional: enable once gitleaks is installed (T097 polish task).
+      # - id: gitleaks
+      #   name: gitleaks (secret scan)
+      #   entry: gitleaks detect --staged --redact
+      #   language: system
+      #   pass_filenames: false

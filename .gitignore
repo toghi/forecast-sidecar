@@ -1,0 +1,53 @@
+# Python
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.eggs/
+
+# Tools
+.venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+
+# uv
+# uv.lock IS committed (Constitution Principle I)
+
+# Environments / secrets
+.env
+.env.*
+!.env.example
+
+# Data / models (never commit; live in GCS in cloud envs)
+data/
+models/
+
+# Terraform
+infra/**/.terraform/
+infra/**/.terraform.tfstate.lock.info
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.tfplan.json
+# infra/**/.terraform.lock.hcl IS committed (locks provider versions)
+
+# IDEs / editor
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+dist/
+build/

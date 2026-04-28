@@ -1,0 +1,46 @@
+# VCS
+.git/
+.gitignore
+.gitattributes
+
+# Python build/cache
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Virtualenv (image installs deps fresh)
+.venv/
+
+# Tests + dev artifacts (NOT shipped)
+tests/
+docs/
+specs/
+infra/
+
+# Secrets / env
+.env
+.env.*
+!.env.example
+
+# Terraform
+*.tfstate*
+*.tfplan*
+**/.terraform/
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Misc
+*.swp
+dist/
+build/

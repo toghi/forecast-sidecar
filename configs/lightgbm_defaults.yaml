@@ -1,0 +1,11 @@
+# Default LightGBM hyperparameters. Per-(company, CO) feature_config.json
+# may override any of these; trainer code always sets `deterministic`,
+# `seed`, and `num_threads` regardless of caller (Constitution I).
+n_estimators: 500
+learning_rate: 0.05
+num_leaves: 31
+max_depth: -1
+min_data_in_leaf: 20
+objective: regression
+metric: mae
+verbosity: -1
