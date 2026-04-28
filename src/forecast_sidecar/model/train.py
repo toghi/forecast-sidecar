@@ -116,12 +116,18 @@ def validate_history(
     return out
 
 
-def _drop_historic_only_columns(
+def _filter_to_declared_columns(
     df: pd.DataFrame,
     feature_config: dict[str, Any],
 ) -> pd.DataFrame:
-    historic_only = list(feature_config.get("historic_exog", []))
-    cols_to_drop = [c for c in historic_only if c in df.columns]
+    """Keep only columns the feature_config declares: id/time/target +
+    static_features + future_exog. Drops historic_exog (history-only) and
+    anything undeclared so stray object-dtype columns can't leak into
+    LightGBM."""
+    keep: set[str] = {"unique_id", "ds", "y"}
+    keep.update(feature_config.get("static_features", []))
+    keep.update(feature_config.get("future_exog", []))
+    cols_to_drop = [c for c in df.columns if c not in keep]
     if cols_to_drop:
         df = df.drop(columns=cols_to_drop)
     return df
@@ -159,7 +165,7 @@ def run_fit_pipeline(
     `(model, model_metrics_block, gate_result)`. Caller assembles the
     final `metadata.json` with version + training_window + manifest hash."""
     df = validate_history(history, feature_config)
-    df = _drop_historic_only_columns(df, feature_config)
+    df = _filter_to_declared_columns(df, feature_config)
 
     h = int(feature_config.get("horizon", 12))
     n_windows = int(feature_config.get("calibration", {}).get("n_windows", 10))

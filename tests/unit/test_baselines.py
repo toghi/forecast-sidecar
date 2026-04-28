@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from forecast_sidecar.model.baselines import (
     coverage,
@@ -88,7 +89,7 @@ def test_baseline_gate_passes_when_model_at_threshold() -> None:
     """Model must beat baseline by ≥ 10% on sMAPE."""
     result = enforce_baseline_gate(model_smape=0.09, baseline_smape=0.10)
     assert result.passed
-    assert result.improvement_pct == 0.1
+    assert result.improvement_pct == pytest.approx(0.1)
 
 
 def test_baseline_gate_fails_when_improvement_below_threshold() -> None:
