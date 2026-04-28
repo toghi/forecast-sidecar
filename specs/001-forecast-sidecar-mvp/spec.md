@@ -9,6 +9,13 @@ intervals, served behind authenticated HTTP for inference and trained as a
 batch job. Caller (Go API) brokers all data and orchestration; this service
 holds no business logic and no database access."
 
+## Clarifications
+
+### Session 2026-04-28
+
+- Q: Which network primitive should the forecast service use to be reachable only from the backend's VPC? → A: Direct VPC egress + VPC peering (modern GCP-recommended path); align with `toolsname-agent-sidecar` in a follow-up MR if they diverge
+- Q: Must `ALLOWED_CALLERS` be a non-empty allow-list in production? → A: Required (non-empty) in staging + production; service refuses to start if unset. Local stays open for dev friction.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - On-Demand Forecast for a Computed Object (Priority: P1)
@@ -382,17 +389,30 @@ distinct readiness signal) but not for first-cut functional value, so P2.
   result in a successful TLS handshake to the service.
 - **FR-039**: The inference service MUST be reachable from the calling
   backend's GCP project (and only from there). The network topology
-  MUST mirror the existing `toolsname-agent-sidecar` (Claude SDK
-  sidecar): a VPC connector / VPC attachment on the Cloud Run service,
-  Shared VPC or VPC peering with the backend project, and Cloud NAT
+  uses **Direct VPC egress on Cloud Run + VPC peering** between the
+  forecast project's VPC and the calling backend's VPC, with Cloud NAT
   configured for any required outbound that is not covered by Private
   Google Access. Backend → forecast traffic MUST traverse the private
-  VPC path; egress from the forecast service to GCS and to the OIDC
-  JWKS endpoint MUST use Private Google Access (no NAT hop).
+  VPC path via the peering; egress from the forecast service to GCS,
+  Secret Manager, and the OIDC JWKS endpoint MUST use Private Google
+  Access (no NAT hop). If the existing `toolsname-agent-sidecar`
+  diverges from this primitive (e.g. uses a Serverless VPC Access
+  connector or Shared VPC), alignment is handled in a follow-up MR
+  rather than blocking this v1.
 - **FR-040**: Reachability MUST be defended in depth: even from inside
   the permitted VPC, every request still requires a valid OIDC token
   (FR-018, FR-019, FR-020). Network isolation is additive to, not a
   replacement for, OIDC authentication.
+- **FR-041**: In staging and production, `ALLOWED_CALLERS` MUST be a
+  non-empty allow-list of caller service-account emails; the service
+  MUST refuse to start (non-zero exit at startup, before binding any
+  port) when this env var is empty or absent in those environments.
+  Local development MAY leave `ALLOWED_CALLERS` unset (defaults to
+  open) provided the local-bypass gate from FR-018 is also active
+  (`AUTH_BYPASS=1` only with localhost audience and debug logging).
+  Terraform MUST refuse `plan`/`apply` against staging or production
+  when the corresponding `terraform.tfvars` does not declare an
+  allow-list of length ≥ 1.
 
 ### Key Entities
 
@@ -568,13 +588,13 @@ the defaults below and the planning phase can revisit if needed:
   modules in `infra/modules/` against the matching project.
 - **Production deploy gate**: a tag matching `vX.Y.Z` plus explicit
   manual approval in GitLab. No auto-deploy to production from `main`.
-- **Network topology**: mirror the existing `toolsname-agent-sidecar`
-  exactly — same VPC connector / Direct VPC mode, same Shared VPC vs
-  VPC peering choice, same Cloud NAT configuration. The planner MUST
-  read that sidecar's Terraform before scaffolding `infra/modules/`
-  here; if the existing pattern uses Shared VPC the forecast project
-  joins the same shared VPC host, if it uses peering the forecast
-  project peers to the backend's VPC.
+- **Network topology**: Direct VPC egress on Cloud Run + VPC peering
+  with the calling backend's VPC + Cloud NAT for any non-Google
+  outbound + Private Google Access for GCS / Secret Manager / OIDC
+  JWKS (clarification 2026-04-28). If the existing
+  `toolsname-agent-sidecar` uses a different primitive (e.g. Serverless
+  VPC Access connector, Shared VPC), the divergence is reconciled in a
+  follow-up MR, not blocking v1.
 - **Secret Manager scope**: per-project Secret Manager (one set of
   secrets per cloud env). The Cloud Run service account holds
   `roles/secretmanager.secretAccessor` only on the secrets it actually
