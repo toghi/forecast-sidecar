@@ -19,7 +19,7 @@ pytestmark = [pytest.mark.slow, pytest.mark.integration]
 
 def test_cold_load_p99_under_3s(
     app_client: TestClient,
-    seeded_storage: dict[str, Any],  # noqa: ARG001
+    seeded_storage: dict[str, Any],
     sample_request_dict: dict[str, Any],
 ) -> None:
     cache = app_client.app.state.cache

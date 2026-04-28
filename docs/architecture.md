@@ -273,6 +273,77 @@ The wire format and error taxonomy are stable across these evolutions.
 
 ---
 
+## 9. Operational runbook
+
+A handful of things are configured outside Terraform (because they're
+GitHub-side or one-time bootstraps) and aren't verifiable from a
+`terraform plan`. Keep this list current — it's the canonical answer to
+"why is X set this way?" during incident review.
+
+### GitHub repo configuration (T069 / T093)
+
+- **Branch protection on `main`**: required PR review (≥ 1 approval),
+  required status checks (`ruff`, `mypy`, `gitleaks`, `terraform-fmt`,
+  `docs-link-check`, `env-contract`, `terraform-secrets-check`,
+  `pytest-fast`, `build`, `iac-plan staging`, `iac-plan production`),
+  no force-push, no deletion, linear history.
+- **GitHub Environments**:
+  - `staging` — no required reviewers; auto-deploys on push to `main`.
+  - `production` — required reviewers (maintainers list); deployment
+    branch rule restricts to refs matching `refs/tags/v*`. Tag pushes
+    that miss reviewer approval pause indefinitely.
+- **Workload Identity Federation** (no long-lived JSON keys):
+  one provider per env, audience = `https://github.com/<org>/<repo>`,
+  attribute condition restricts to this repo + branch/tag patterns.
+- **Repository variables** consumed by workflows:
+  `GCP_WIF_PROVIDER_{STAGING,PRODUCTION}`,
+  `GCP_BUILD_SA_{STAGING,PRODUCTION}`,
+  `GCP_TF_SA_{STAGING,PRODUCTION}`,
+  `GCP_DEPLOY_SA_PRODUCTION`,
+  `GCP_PROJECT_{STAGING,PRODUCTION}`,
+  `GAR_REGION`, `GAR_REPO`, `TFSTATE_BUCKET_PREFIX`,
+  `STAGING_RUN_URL`, `PRODUCTION_RUN_URL`.
+- **Repository secrets**: `SENTRY_INGEST_URL` (drift-check Sentry
+  webhook). All other secrets live in Secret Manager and are bound to
+  Cloud Run via `secret_key_ref` — never in GitHub Actions secrets.
+
+### Schedule verification (T094)
+
+After the first prod deploy, confirm:
+
+- `drift-check.yml` ran successfully on its schedule (cron `0 4 * * *`).
+- `external-probe.yml` ran successfully on its schedule (cron `0 5 * * *`)
+  and the probe FAILED (i.e., the public-internet curl was rejected) —
+  if it succeeded, ingress=internal isn't taking effect.
+
+### Performance targets (Phase 9 / SC-001..006)
+
+- Warm-cache `/forecast` p99 ≤ 500 ms (SC-001) — verified by
+  `tests/integration/test_perf_warm_cache.py`.
+- Cold-load `/forecast` p99 ≤ 3 s (SC-002) — verified by
+  `tests/integration/test_perf_cold_load.py`.
+- Training run p95 ≤ 60 s for ~24-mo × 5-series (SC-006) — verified by
+  `tests/integration/test_perf_train.py`.
+- These tests are `slow`-marked and run on `main` + tag pipelines, not
+  on every PR.
+
+### Coverage band targets (SC-003 / SC-004)
+
+The 80%-interval-in-[0.75, 0.85] / 95%-interval-in-[0.92, 0.97] bands
+are **production observations** (across real `(company, CO)` pairs),
+not enforced on the synthetic test fixture (which overcovers because
+its noise is small). The trainer's `metadata.json` includes
+`coverage_80` and `coverage_95` from a CV holdout; track these in a
+dashboard against the spec bands.
+
+### Backfill / cold-start
+
+For a `(company, CO)` with < `min_history_periods` of data, the
+trainer exits 2 with a `BadHistoryError`. The intended UX is the
+calling backend showing "Not enough history" rather than this service
+attempting a degraded forecast. Cold-start zero-shot (TimesFM) is
+explicitly out of scope per spec §15.
+
 ## Pointers
 
 - [README.md](../README.md) — landing page

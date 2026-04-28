@@ -1,4 +1,4 @@
-"""T090 / SC-006 — full training run p95 ≤ 60 s for ~24-month × 5-series workloads."""
+"""T090 / SC-006 — full training run p95 <= 60 s for ~24-month by 5-series workloads."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from typing import Any
 import pytest
 from click.testing import CliRunner
 
-from forecast_sidecar.config import Settings  # noqa: F401  (used by fixtures)
+from forecast_sidecar.config import Settings
 from forecast_sidecar.train_cli import main as train_cli
 from tests.conftest import CO_ID, COMPANY_ID
 
@@ -40,8 +40,8 @@ _FEATURE_CONFIG: dict[str, Any] = {
 
 
 def test_train_p95_under_60s(
-    local_settings: Settings,  # noqa: ARG001
-    fake_gcs: object,  # noqa: ARG001
+    local_settings: Settings,
+    fake_gcs: object,
     synthetic_series: Any,
 ) -> None:
     # Materialize one series of the synthetic fixture (~84 monthly periods).
@@ -61,11 +61,16 @@ def test_train_p95_under_60s(
         result = runner.invoke(
             train_cli,
             [
-                "--company-id", COMPANY_ID,
-                "--computed-object-id", CO_ID,
-                "--history-url", f"file://{history}",
-                "--feature-config-url", f"file://{config}",
-                "--output-version", str(v),
+                "--company-id",
+                COMPANY_ID,
+                "--computed-object-id",
+                CO_ID,
+                "--history-url",
+                f"file://{history}",
+                "--feature-config-url",
+                f"file://{config}",
+                "--output-version",
+                str(v),
             ],
             catch_exceptions=False,
         )

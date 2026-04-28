@@ -253,17 +253,17 @@ Single project, src layout (per [plan.md](plan.md) §Project Structure):
 
 **Purpose**: Hardening, drift detection, performance verification, end-to-end smoke against `main`.
 
-- [ ] T088 [P] Performance assertion in `tests/integration/test_perf_warm_cache.py` (marker `slow`): warm-cache `/forecast` p99 ≤ 500 ms over 200 requests against the synthetic fixture (SC-001)
-- [ ] T089 [P] Performance assertion in `tests/integration/test_perf_cold_load.py` (marker `slow`): cold model load + predict p99 ≤ 3 s for a 5 MB artifact (SC-002)
-- [ ] T090 [P] Performance assertion in `tests/integration/test_perf_train.py` (marker `slow`): full training run on synthetic 24mo × 5 series ≤ 60 s (SC-006)
-- [ ] T091 [P] Coverage-band sweep in `tests/integration/test_coverage_band.py` (marker `slow`): trains 10 distinct synthetic series, asserts 80%-interval empirical coverage ∈ [0.75, 0.85] for ≥ 9/10 and 95%-interval ∈ [0.92, 0.97] for ≥ 9/10 (SC-003, SC-004)
-- [ ] T092 [P] End-to-end quickstart validation in `tests/integration/test_quickstart.py` (marker `slow`): runs the exact commands from `specs/001-forecast-sidecar-mvp/quickstart.md` §3 inside compose and asserts the documented outcome (SC-012, SC-014)
-- [ ] T093 Confirm GitHub configuration matches T069 (branch protection on `main`; `staging`/`production` Environments; Workload Identity Federation provider) — captured as a runbook entry in `docs/architecture.md` since it's not Terraform-able from inside this repo
-- [ ] T094 Verify `.github/workflows/drift-check.yml` schedule (T074c) is firing in production and surfacing failures correctly
-- [ ] T095 [P] Add `CHANGELOG.md` skeleton with the v0.1.0 entry covering this MVP
-- [ ] T096 Run `lychee` over the full repo and fix any broken internal links surfaced
-- [ ] T097 Run `gitleaks detect --redact -v` over the full repo and remove any incidental leaks (also verifies SC-017 baseline)
-- [ ] T098 [P] Profile the warm-cache forecast path with `py-spy` and capture a flamegraph in `docs/perf/` (only commit if it shows a non-trivial hotspot; otherwise discard)
+- [X] T088 [P] Performance assertion in `tests/integration/test_perf_warm_cache.py` (marker `slow`): warm-cache `/forecast` p99 ≤ 500 ms over 200 requests against the synthetic fixture (SC-001)
+- [X] T089 [P] Performance assertion in `tests/integration/test_perf_cold_load.py` (marker `slow`): cold model load + predict p99 ≤ 3 s for a 5 MB artifact (SC-002)
+- [X] T090 [P] Performance assertion in `tests/integration/test_perf_train.py` (marker `slow`): full training run on synthetic 24mo × 5 series ≤ 60 s (SC-006)
+- [X] T091 [P] Coverage-band sweep in `tests/integration/test_coverage_band.py` (marker `slow`): trains 10 distinct synthetic series, asserts 80%-interval empirical coverage ∈ [0.75, 0.85] for ≥ 9/10 and 95%-interval ∈ [0.92, 0.97] for ≥ 9/10 (SC-003, SC-004)
+- [X] T092 [P] End-to-end quickstart validation in `tests/integration/test_quickstart.py` (marker `slow`): runs the exact commands from `specs/001-forecast-sidecar-mvp/quickstart.md` §3 inside compose and asserts the documented outcome (SC-012, SC-014)
+- [X] T093 Confirm GitHub configuration matches T069 (branch protection on `main`; `staging`/`production` Environments; Workload Identity Federation provider) — captured as a runbook entry in `docs/architecture.md` since it's not Terraform-able from inside this repo
+- [X] T094 Verify `.github/workflows/drift-check.yml` schedule (T074c) is firing in production and surfacing failures correctly
+- [X] T095 [P] Add `CHANGELOG.md` skeleton with the v0.1.0 entry covering this MVP
+- [X] T096 Run `lychee` over the full repo and fix any broken internal links surfaced
+- [X] T097 Run `gitleaks detect --redact -v` over the full repo and remove any incidental leaks (also verifies SC-017 baseline)
+- [X] T098 [P] Profile the warm-cache forecast path with `py-spy` and capture a flamegraph in `docs/perf/` (only commit if it shows a non-trivial hotspot; otherwise discard)
 
 **Final Checkpoint**: All 20 success criteria from spec.md are demonstrable; pre-commit + CI green on `main`; staging deploy succeeds end-to-end; production deploy succeeds end-to-end on a `v0.1.0` tag.
 

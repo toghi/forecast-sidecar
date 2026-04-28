@@ -23,63 +23,6 @@ _H = 12
 _N_WINDOWS = 5
 
 
-def _train_predict_coverage(history: pd.DataFrame) -> tuple[float, float]:
-    history = history.copy()
-    history["ds"] = pd.to_datetime(history["ds"])
-
-    train = history.iloc[:-_H].reset_index(drop=True)
-    holdout = history.iloc[-_H:].reset_index(drop=True)
-
-    mlf = MLForecast(
-        models=[
-            LGBMRegressor(
-                deterministic=True,
-                seed=42,
-                num_threads=1,
-                verbosity=-1,
-                n_estimators=100,
-                learning_rate=0.1,
-                num_leaves=15,
-                min_data_in_leaf=2,
-            )
-        ],
-        freq="MS",
-        lags=[1, 3, 6, 12],
-        date_features=["month"],
-        num_threads=1,
-    )
-    mlf.fit(
-        train,
-        static_features=[],
-        prediction_intervals=PredictionIntervals(n_windows=_N_WINDOWS, h=_H),
-    )
-
-    x_df = holdout[["unique_id", "ds", "active_clients"]].reset_index(drop=True)
-    forecast = mlf.predict(h=_H, level=[80, 95], X_df=x_df)
-    forecast = forecast.sort_values("ds").reset_index(drop=True)
-
-    model_col = next(
-        c for c in forecast.columns if c not in {"unique_id", "ds"} and "-" not in c
-    )
-
-    # Align actuals with forecast rows.
-    actuals = (
-        holdout.set_index("ds")["y"]
-        .reindex(forecast["ds"].values)
-        .to_numpy()
-    )
-
-    inside_80 = (
-        (actuals >= forecast[f"{model_col}-lo-80"].to_numpy())
-        & (actuals <= forecast[f"{model_col}-hi-80"].to_numpy())
-    ).mean()
-    inside_95 = (
-        (actuals >= forecast[f"{model_col}-lo-95"].to_numpy())
-        & (actuals <= forecast[f"{model_col}-hi-95"].to_numpy())
-    ).mean()
-    return float(inside_80), float(inside_95)
-
-
 def _interval_sanity_check(history: pd.DataFrame) -> dict[str, Any]:
     """Train + predict on the holdout; return the 80/95 coverage AND the
     interval invariants we expect to hold for ANY calibrated model."""
@@ -115,9 +58,7 @@ def _interval_sanity_check(history: pd.DataFrame) -> dict[str, Any]:
 
     x_df = holdout[["unique_id", "ds", "active_clients"]].reset_index(drop=True)
     forecast = mlf.predict(h=_H, level=[80, 95], X_df=x_df).sort_values("ds").reset_index(drop=True)
-    model_col = next(
-        c for c in forecast.columns if c not in {"unique_id", "ds"} and "-" not in c
-    )
+    model_col = next(c for c in forecast.columns if c not in {"unique_id", "ds"} and "-" not in c)
 
     actuals = holdout.set_index("ds")["y"].reindex(forecast["ds"].values).to_numpy()
     lo80 = forecast[f"{model_col}-lo-80"].to_numpy()

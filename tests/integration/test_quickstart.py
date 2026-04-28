@@ -47,8 +47,8 @@ _FEATURE_CONFIG: dict[str, Any] = {
 
 def test_quickstart_train_then_forecast(
     app_client: TestClient,
-    local_settings: Settings,  # noqa: ARG001
-    fake_gcs: object,  # noqa: ARG001
+    local_settings: Settings,
+    fake_gcs: object,
     synthetic_series: Any,
     sample_request_dict: dict[str, Any],
 ) -> None:
@@ -69,11 +69,16 @@ def test_quickstart_train_then_forecast(
     result = runner.invoke(
         train_cli,
         [
-            "--company-id", COMPANY_ID,
-            "--computed-object-id", CO_ID,
-            "--history-url", f"file://{history}",
-            "--feature-config-url", f"file://{config}",
-            "--output-version", "1",
+            "--company-id",
+            COMPANY_ID,
+            "--computed-object-id",
+            CO_ID,
+            "--history-url",
+            f"file://{history}",
+            "--feature-config-url",
+            f"file://{config}",
+            "--output-version",
+            "1",
         ],
         catch_exceptions=False,
     )
@@ -87,6 +92,4 @@ def test_quickstart_train_then_forecast(
     assert payload["model_version"] == 1
     assert len(payload["forecast"]) == sample_request_dict["horizon_periods"]
     for point in payload["forecast"]:
-        assert (
-            point["lo95"] <= point["lo80"] <= point["point"] <= point["hi80"] <= point["hi95"]
-        )
+        assert point["lo95"] <= point["lo80"] <= point["point"] <= point["hi80"] <= point["hi95"]

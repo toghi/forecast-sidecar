@@ -14,7 +14,7 @@ pytestmark = [pytest.mark.slow, pytest.mark.integration]
 
 def test_warm_cache_p99_under_500ms(
     app_client: TestClient,
-    seeded_storage: dict[str, Any],  # noqa: ARG001
+    seeded_storage: dict[str, Any],
     sample_request_dict: dict[str, Any],
 ) -> None:
     # Warm-up: first request loads the model into cache.
