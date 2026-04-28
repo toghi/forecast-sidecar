@@ -177,7 +177,11 @@ async def forecast(
 
 @app.exception_handler(HTTPException)
 async def _http_exception_handler(_: Request, exc: HTTPException) -> JSONResponse:
-    body = exc.detail if isinstance(exc.detail, dict) else {"error": "bad_request", "detail": str(exc.detail)}
+    body = (
+        exc.detail
+        if isinstance(exc.detail, dict)
+        else {"error": "bad_request", "detail": str(exc.detail)}
+    )
     return JSONResponse(status_code=exc.status_code, content=body)
 
 

@@ -104,3 +104,40 @@ def cloud_env(monkeypatch: pytest.MonkeyPatch) -> None:
     from forecast_sidecar.config import get_settings
 
     get_settings.cache_clear()
+
+
+@pytest.fixture
+def app_client(local_settings: Settings, fake_gcs: object) -> Iterator[Any]:
+    """A FastAPI TestClient with lifespan active and AUTH_BYPASS on."""
+    from fastapi.testclient import TestClient
+
+    from forecast_sidecar.main import app
+
+    with TestClient(app) as client:
+        yield client
+
+
+COMPANY_ID = "00000000-0000-0000-0000-000000000001"
+CO_ID = "00000000-0000-0000-0000-000000000002"
+
+
+@pytest.fixture
+def seeded_storage(
+    local_settings: Settings,
+    fake_gcs: object,
+    synthetic_series: pl.DataFrame,
+) -> dict[str, Any]:
+    """Train a small MLForecast on one synthetic series and seed it as v1
+    in fake-GCS at the canonical company/CO path. Returns metadata."""
+    from tests._helpers import history_for_single_series, train_and_seed_model
+
+    unique_id = f"{COMPANY_ID}/{CO_ID}"
+    history = history_for_single_series(synthetic_series, unique_id)
+    _, metadata = train_and_seed_model(
+        settings=local_settings,
+        history=history,
+        company_id=COMPANY_ID,
+        computed_object_id=CO_ID,
+        version=1,
+    )
+    return metadata

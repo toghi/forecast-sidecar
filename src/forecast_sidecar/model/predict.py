@@ -98,7 +98,8 @@ async def load_or_fetch(
         model = joblib.load(io.BytesIO(model_bytes))
         return model, metadata
 
-    return await cache.models.get_or_fetch(model_key, fetch_model)
+    result: tuple[Any, dict[str, Any]] = await cache.models.get_or_fetch(model_key, fetch_model)
+    return result
 
 
 def _build_future_df(

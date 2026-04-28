@@ -98,3 +98,10 @@ markers = [
     "integration: end-to-end against fakes",
     "requires_data: tests needing external data fixtures",
 ]
+
+[dependency-groups]
+dev = [
+    "pandas-stubs>=3.0.0.260204",
+    "pyyaml>=6.0.3",
+    "types-pyyaml>=6.0.12.20260408",
+]
