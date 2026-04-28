@@ -71,6 +71,8 @@ docker run --rm forecast-sidecar \
 
 ## 5. Where things live
 
+- **Architecture overview**: [docs/architecture.md](../../docs/architecture.md) — start here for the mental model
+- **README**: [README.md](../../README.md) — landing page; links here and to the contracts below
 - Service entry: [src/forecast_sidecar/main.py](../../src/forecast_sidecar/main.py)
 - Trainer entry: [src/forecast_sidecar/train_cli.py](../../src/forecast_sidecar/train_cli.py)
 - Wire schemas: [src/forecast_sidecar/schemas.py](../../src/forecast_sidecar/schemas.py)

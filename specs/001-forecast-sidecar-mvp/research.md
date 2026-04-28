@@ -317,6 +317,93 @@ sMAPE-beats-baseline assertion is deterministic across CI runs.
 
 ---
 
+## R11. Documentation: README + architecture doc + link CI
+
+**Question** (from FR-027 / FR-028 / FR-029 / FR-030, SC-012 / SC-013):
+how do we structure these docs and enforce that they stay in sync?
+
+**Decision**:
+
+1. **`README.md`** — landing page. Sections in this order so it skims well:
+   - One-paragraph summary (what + why).
+   - Stack (one line per major dep, links to upstream).
+   - Repository layout (truncated tree pointing at `src/`, `docs/`,
+     `tests/`, and the spec dir).
+   - **Architecture** (3–5 sentences) → link to
+     [docs/architecture.md](../../docs/architecture.md).
+   - Local development (the procedure already in `quickstart.md`,
+     condensed).
+   - Deployment (build → Artifact Registry → Cloud Run service + Job).
+   - Contracts (links to `specs/.../contracts/openapi.yaml`,
+     `train_cli.md`, `feature_config.schema.json`).
+   - Constitution (one-line pointer to `.specify/memory/constitution.md`).
+
+2. **`docs/architecture.md`** — single document, no nested directory in
+   v1. Sections:
+   1. *System context* — Mermaid `flowchart LR` showing Go backend → this
+      service ↔ GCS, plus the Cloud Run Job side.
+   2. *Inference request lifecycle* — Mermaid `sequenceDiagram` for the
+      `/forecast` happy path: caller → OIDC verify → cache lookup →
+      (cache miss → GCS load) → mlforecast.predict → response.
+   3. *Training job lifecycle* — Mermaid `sequenceDiagram` for the
+      Click CLI: download → validate → fit → calibrate → upload →
+      atomic-promote.
+   4. *Storage layout & atomic-promotion contract* — text + the GCS tree
+      from data-model.md §2.1 + the CAS sequence from R4.
+   5. *Cache semantics* — the two-tier TTL design from R5.
+   6. *Authentication & identity model* — verifier flow from R6, audience
+      and allow-list semantics, the local-dev bypass guardrail.
+   7. *Constitution → code map* — table mapping each of the five
+      principles to the modules / configs that enforce it (`seeds.py`,
+      `manifest.py`, `model/features.py`, `model/baselines.py`,
+      `feature_config.schema.json`).
+   8. *Out-of-scope and future evolution* — mirrors spec §15 with one
+      line each on what would change for hierarchical / cold-start /
+      neural / global-model.
+
+   Diagrams use **Mermaid** (rendered natively by GitHub). No external
+   build step. ASCII diagrams are acceptable as fallback where Mermaid
+   would be cumbersome (e.g. the GCS tree).
+
+3. **Link CI** — `.github/workflows/docs.yml` runs
+   [`lychee`](https://github.com/lycheeverse/lychee) on push and on PRs
+   that touch `**/*.md`, with config in `.lychee.toml`:
+   - Check relative links inside the repo (catches broken
+     README → `docs/architecture.md` → contracts pointers).
+   - External-link checks limited to a small allow-list of canonical
+     upstreams (Nixtla, microsoft/LightGBM, FastAPI, GCP docs) to avoid
+     CI flakes from random third-party 404s.
+   - Action: `lycheeverse/lychee-action@v2` with cache enabled.
+
+**Rationale**:
+- Mermaid is the lowest-friction diagramming approach that renders on
+  GitHub without local tooling — keeps the doc reviewable in PRs.
+- A single `docs/architecture.md` (vs a `docs/` tree of separate pages)
+  is right-sized for v1; we can split later if it grows past ~600 lines.
+- `lychee` is fast, cacheable, and supports the allow-list pattern. The
+  alternative `markdown-link-check` is unmaintained and Node-based,
+  which adds runtime cost we don't otherwise need.
+
+**Alternatives considered**:
+- *Sphinx / MkDocs* — way too much machinery for one architecture doc.
+  Defer until we have a reason (e.g. an SDK we publish to PyPI).
+- *PlantUML diagrams* — needs a render step in CI; rejected for the same
+  reason as Sphinx.
+- *Per-section docs in a `docs/` tree* (`docs/inference.md`,
+  `docs/training.md`, `docs/auth.md`) — rejected for v1; one page is
+  easier to keep coherent and discover from the README. Splitting later
+  is mechanical.
+- *Manual link-checking* — rejected; FR-030 is about automated
+  enforcement, and the spec's SC-013 explicitly requires CI to fail on
+  broken links.
+
+**Spec impact**: none — this is the implementation choice that satisfies
+FR-027 → FR-030 / SC-012 / SC-013. The README and architecture doc
+themselves are deliverables of `/speckit-implement`; this research entry
+locks the *shape* so tasks can be enumerated against it.
+
+---
+
 ## Open items deferred to plan / tasks
 
 - **Region defaults / bucket naming / Sentry project / trainer trigger /

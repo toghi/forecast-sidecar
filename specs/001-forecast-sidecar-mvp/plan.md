@@ -30,6 +30,7 @@ JSON to Cloud Logging, Sentry, and trace propagation mirror the existing
 - Data: `polars` for I/O, `pandas` at the mlforecast API boundary, `pyarrow`
 - CLI: `click` for `train_cli`
 - Persistence: `joblib` for model serialization (mlforecast docs default)
+- Docs CI: `lychee` (relative + external link-checker) for `README.md` + `docs/` (FR-029, SC-013)
 
 **Storage**:
 - **Durable**: GCS — `gs://{FORECAST_BUCKET}/forecasts/{company_id}/{co_id}/{vN}/{model.pkl, metadata.json}` plus `latest.json` and (on failure) `error.json`
@@ -98,6 +99,13 @@ Evaluating against `.specify/memory/constitution.md` v1.0.0:
 - Hyperparameters, lags, rolling stats, date features, target transforms, frequency, and target column all live in the per-`(company, CO)` `feature_config.json`. Config is content-hashed and the hash lands in `metadata.json`.
 - The trainer entrypoint reads config and binds mlforecast at startup; no `if model_version == ...` branches in `model/train.py`.
 - Service-level config (env vars in §10 of the spec) is loaded by `pydantic_settings.BaseSettings`.
+
+**Documentation FRs (FR-027 → FR-030)**: not constitution-bound, but
+shaped by the constitution. `docs/architecture.md` includes a section
+"How the constitution is realized in the code" mapping each principle to
+the specific module / file / config that enforces it (e.g. Principle I →
+`seeds.py` + `manifest.py`; Principle II → `model/features.py`; etc.) so
+reviewers can spot drift without re-reading the constitution.
 
 **Result**: 5/5 principles green. No entries needed in Complexity Tracking.
 
