@@ -1,0 +1,45 @@
+# Link-check config for FR-029 / SC-013.
+# Run via:  lychee README.md docs/ specs/
+
+# How aggressively to chase links.
+max_concurrency = 8
+max_retries = 2
+timeout = 20
+
+# Do NOT walk symlinks; do follow relative links.
+include_verbatim = true
+no_progress = true
+
+# Cache successful checks across CI runs.
+cache = true
+max_cache_age = "1d"
+
+# Treat 200/206/301/302/308 as healthy. 401/403 commonly comes from
+# repos that gate index pages — accept them rather than fail CI.
+accept = ["200", "206", "301", "302", "308", "401", "403"]
+
+# Skip checking links that don't materially change.
+exclude = [
+    # GitHub anchor links are notorious for false positives.
+    "github\\.com/.*#.*",
+    # Mermaid diagram nodes render as anchors that lychee can't resolve.
+    "^#mermaid-",
+    # placeholder-style URLs in docs
+    "https?://example\\.invalid",
+    # localhost references in dev recipes
+    "https?://localhost",
+    "https?://127\\.0\\.0\\.1",
+]
+
+# Internal-link checking is the priority (FR-029). External roots we DO
+# care to keep healthy (canonical upstreams referenced from docs):
+# anything else is best-effort.
+include = [
+    "specs/.*",
+    "docs/.*",
+    "README\\.md",
+    "https://github\\.com/Nixtla/.*",
+    "https://github\\.com/microsoft/LightGBM.*",
+    "https://github\\.com/fastapi/.*",
+    "https://github\\.com/pydantic/.*",
+]

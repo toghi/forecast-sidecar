@@ -191,10 +191,10 @@ Single project, src layout (per [plan.md](plan.md) §Project Structure):
 
 **Purpose**: User-facing README and architecture document required by the spec; CI check that the README→architecture link works.
 
-- [ ] T060 [P] Author `README.md` per the section order in research R11 (summary; stack; layout; **Architecture** section linking to `docs/architecture.md`; local development; deployment; contracts; constitution pointer)
-- [ ] T061 [P] Author `docs/architecture.md` per research R11's 8-section structure (system context, request lifecycle, training lifecycle, storage layout + atomic-promotion contract, cache semantics, auth & identity model, constitution → code map, out-of-scope), using Mermaid for the three diagrams
-- [ ] T062 [P] Create `.lychee.toml` with relative-link checking on `README.md`, `docs/`, `specs/` and an external-link allow-list (Nixtla, microsoft/LightGBM, FastAPI, GCP docs) (FR-029, SC-013)
-- [ ] T063 [P] Create `ci/lint.gitlab-ci.yml` `docs:link-check` job invoking `lycheeverse/lychee-action@v2`
+- [X] T060 [P] Author `README.md` per the section order in research R11 (summary; stack; layout; **Architecture** section linking to `docs/architecture.md`; local development; deployment; contracts; constitution pointer)
+- [X] T061 [P] Author `docs/architecture.md` per research R11's 8-section structure (system context, request lifecycle, training lifecycle, storage layout + atomic-promotion contract, cache semantics, auth & identity model, constitution → code map, out-of-scope), using Mermaid for the three diagrams
+- [X] T062 [P] Create `.lychee.toml` with relative-link checking on `README.md`, `docs/`, `specs/` and an external-link allow-list (Nixtla, microsoft/LightGBM, FastAPI, GCP docs) (FR-029, SC-013)
+- [X] T063 [P] Create `ci/lint.gitlab-ci.yml` `docs:link-check` job invoking `lycheeverse/lychee-action@v2`
 
 **Checkpoint**: README opens to the architecture doc with one click; lychee CI fails any MR that breaks an internal link.
 
