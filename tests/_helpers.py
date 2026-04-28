@@ -58,6 +58,13 @@ def train_and_seed_model(
     GCS at v{version}/, plus a `latest.json` pointer."""
     history = history.copy()
     history["unique_id"] = f"{company_id}/{computed_object_id}"
+    # Drop historic-only columns the inference call won't supply.
+    for col in ("calls",):
+        if col in history.columns:
+            history = history.drop(columns=[col])
+    for col in ("segment", "region", "bizdev_id"):
+        if col in history.columns:
+            history[col] = history[col].astype("category")
 
     mlf = _build_model(history, h=h, n_windows=n_windows)
 

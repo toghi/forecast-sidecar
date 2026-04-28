@@ -6,7 +6,9 @@ import asyncio
 from dataclasses import dataclass
 from typing import Any
 
-from fastapi import HTTPException, Request, status
+from typing import Annotated
+
+from fastapi import Depends, HTTPException, Request, status
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token
 
@@ -44,9 +46,9 @@ async def _verify_with_google(token: str, audience: str) -> dict[str, Any]:
 
 async def verify_oidc_token(
     request: Request,
-    settings: Settings | None = None,
+    settings: Annotated[Settings, Depends(get_settings)],
 ) -> Claims:
-    s = settings or get_settings()
+    s = settings
 
     if s.auth_bypass and s.is_local_audience and s.log_level == "debug":
         return _BYPASS_CLAIMS

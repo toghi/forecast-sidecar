@@ -94,7 +94,7 @@ def _err(
 
 @app.post("/forecast", response_model=ForecastResponse)
 async def forecast(
-    payload: ForecastRequest,
+    payload: Annotated[ForecastRequest, Body(embed=False)],
     http: Request,
     claims: Annotated[Claims, Depends(verify_oidc_token)],
     storage: Annotated[GCSStorage, Depends(get_storage)],
