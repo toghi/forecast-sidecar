@@ -227,8 +227,23 @@ Validation failure → exit code 2, `error.json` with `phase=download`.
 
 ### 4.1 Service config (`config.Settings`, pydantic-settings)
 
-Loaded from env vars. See spec §10. All env vars get a Pydantic field
-with type and (where applicable) validation.
+Loaded from env vars. The same `Settings` class works for all three
+environments — only the *source* of values differs (FR-036):
+
+- **Local**: read from `.env` at the repo root (gitignored;
+  `.env.example` committed and CI-checked against `Settings.model_fields`
+  per SC-020).
+- **Staging / Production**: each variable is set on the Cloud Run
+  resource by Terraform; secrets are bound via Cloud Run's Secret
+  Manager integration (`secretKeyRef`-equivalent) so the value never
+  appears in Terraform state, in container images, or in CI logs.
+
+Cloud-Run-injected env vars take precedence over `.env` (which doesn't
+exist in the cloud container), so the same `pydantic-settings` config
+works unchanged.
+
+All env vars get a Pydantic field with type and (where applicable)
+validation.
 
 | Field | Env var | Type | Default |
 |---|---|---|---|

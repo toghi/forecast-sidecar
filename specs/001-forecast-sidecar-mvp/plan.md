@@ -112,6 +112,31 @@ the specific module / file / config that enforces it (e.g. Principle I →
 `seeds.py` + `manifest.py`; Principle II → `model/features.py`; etc.) so
 reviewers can spot drift without re-reading the constitution.
 
+**Operations & Infrastructure FRs (FR-031 → FR-040)**: re-evaluated
+against all five principles after their addition; no violations.
+- *Reproducibility (I)*: Terraform-managed everything (FR-031) plus
+  immutable container tags (FR-035 production-deploy gate) plus
+  per-env state buckets (FR-036) reinforce reproducibility — they make
+  *infrastructure* state addressable the same way Principle I makes
+  *model* state addressable. `terraform plan` is the infra equivalent
+  of the constitution's run manifest.
+- *Temporal Integrity (II)*: not affected — these FRs are about how the
+  service is reachable and configured, not about how features are
+  computed.
+- *Data Contract (III)*: extended to the env-var surface — `.env.example`
+  is the documented contract for env vars, validated against
+  `Settings.model_fields` in CI (SC-020). This is a strict generalization
+  of Principle III to operational config.
+- *Baseline-Beating Evaluation (IV)*: not affected.
+- *Configuration Over Code (V)*: strongly reinforced — three envs differ
+  only in `terraform.tfvars` and Secret Manager contents (FR-032,
+  FR-036). Code paths are identical across envs; no `if env == "prod"`
+  branches are permitted.
+
+The defense-in-depth requirement (FR-040 — OIDC still required from
+inside the VPC) does not interact with the constitution but is captured
+in the architecture doc's auth section per FR-028.
+
 **Result**: 5/5 principles green. No entries needed in Complexity Tracking.
 
 ## Project Structure
