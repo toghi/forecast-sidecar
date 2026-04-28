@@ -111,6 +111,8 @@ def train_and_seed_model(
         model_bytes=buf.getvalue(),
         metadata=metadata,
     )
+    existing = storage.read_latest_pointer(company_id, computed_object_id)
+    expected_gen = existing[1] if existing is not None else 0
     storage.write_latest_pointer_cas(
         company_id,
         computed_object_id,
@@ -119,7 +121,7 @@ def train_and_seed_model(
             "trained_at": metadata["trained_at"],
             "model_path": f"forecasts/{company_id}/{computed_object_id}/v{version}/model.pkl",
         },
-        expected_generation=0,
+        expected_generation=expected_gen,
     )
     return mlf, metadata
 

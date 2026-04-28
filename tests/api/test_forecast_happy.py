@@ -70,16 +70,17 @@ def test_trace_context_appears_in_logs(
         cache_logger_on_first_use=False,
     )
 
+    trace_id = "abc123def456abc123def456abc123de"  # 32-char hex (Cloud Run shape)
     response = app_client.post(
         "/forecast",
         json=sample_request_dict,
-        headers={"X-Cloud-Trace-Context": "abc123def456ghi/789;o=1"},
+        headers={"X-Cloud-Trace-Context": f"{trace_id}/789;o=1"},
     )
     assert response.status_code == 200
 
     served = next((e for e in captured if e.get("event") == "forecast.served"), None)
     assert served is not None, f"forecast.served not in {captured}"
-    assert served.get("trace_id") == "abc123def456ghi"
+    assert served.get("trace_id") == trace_id
     assert served.get("span_id") == "789"
     assert served.get("company_id") == COMPANY_ID
     assert served.get("computed_object_id") == CO_ID

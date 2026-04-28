@@ -47,7 +47,7 @@ def init_sentry(dsn: str | None, environment: str, release: str) -> None:
     )
 
 
-_TRACE_CTX_RE = re.compile(r"^(?P<trace>[0-9a-f]+)/(?P<span>\d+)(?:;o=(?P<sampled>[01]))?")
+_TRACE_CTX_RE = re.compile(r"^(?P<trace>[0-9a-fA-F]+)/(?P<span>\d+)(?:;o=(?P<sampled>[01]))?")
 
 
 def extract_trace_context(headers: Mapping[str, str]) -> dict[str, str]:
