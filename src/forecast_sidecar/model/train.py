@@ -180,11 +180,18 @@ def run_fit_pipeline(
         num_threads=1,
         **mlf_kwargs,
     )
+    # CV's per-fold inner calibration needs `inner_n_windows * h + 1` samples
+    # in the SMALLEST fold's training set. Smallest fold has
+    # `min_rows - n_windows * h` rows, so clamp inner_n_windows accordingly.
+    min_rows = int(df.groupby("unique_id", observed=True).size().min())
+    smallest_fold_rows = max(min_rows - n_windows * h, h + 1)
+    inner_n_windows = max(2, min(n_windows, (smallest_fold_rows - 1) // h))
+
     # First fit registers the conformal calibration on the full data. CV
-    # then reuses those intervals for per-fold coverage metrics. mlforecast
-    # internally re-fits during CV and leaves the model in an unusable
-    # state for downstream predict, so we fit a third time at the end to
-    # restore a fully-fitted, calibrated model for joblib.dump.
+    # then computes per-fold metrics including coverage at 80% / 95%.
+    # mlforecast internally re-fits during CV and leaves the model in an
+    # unusable state for downstream predict, so we fit a third time at the
+    # end to restore a fully-fitted, calibrated model for joblib.dump.
     mlf.fit(
         df,
         static_features=static_features,
@@ -196,7 +203,7 @@ def run_fit_pipeline(
         h=h,
         static_features=static_features,
         level=[80, 95],
-        prediction_intervals=PredictionIntervals(n_windows=n_windows, h=h),
+        prediction_intervals=PredictionIntervals(n_windows=inner_n_windows, h=h),
     )
     mlf.fit(
         df,

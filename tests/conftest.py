@@ -19,11 +19,14 @@ FIXTURES = Path(__file__).parent / "fixtures"
 
 @pytest.fixture
 def synthetic_series() -> pl.DataFrame:
-    """Deterministic 84-month by 3-series long-format frame.
+    """Deterministic 96-month by 3-series long-format frame.
 
-    84 months minus max_lag(12) = 72 usable rows per series, comfortably
-    above the ``h * n_windows + 1 = 61`` floor required by
-    ``PredictionIntervals(n_windows=5, h=12)``.
+    96 monthly periods provides headroom for both:
+      - Production-style fits with `PredictionIntervals(n_windows=5, h=12)`
+        (needs ``5 * 12 + 1 = 61`` samples).
+      - Cross-validation's per-fold conformal calibration: smallest fold
+        has ``96 - n_windows * h`` samples, which must satisfy the
+        same floor.
     """
     rng = np.random.default_rng(seed=42)
     rows: list[dict[str, Any]] = []
@@ -33,8 +36,8 @@ def synthetic_series() -> pl.DataFrame:
     region = {"s_0": "emea", "s_1": "amer", "s_2": "apac"}
 
     for sid in ("s_0", "s_1", "s_2"):
-        for i in range(84):
-            year = 2019 + i // 12
+        for i in range(96):
+            year = 2018 + i // 12
             month = (i % 12) + 1
             ds = f"{year}-{month:02d}-01"
             seasonal = 50 * np.sin(2 * np.pi * (month - 1) / 12)
