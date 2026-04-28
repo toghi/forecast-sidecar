@@ -564,14 +564,16 @@ A scheduled CI job (cron, daily) runs an external probe against the
 staging and production hostnames and asserts the request fails before
 TLS handshake — implements SC-018.
 
-**Open dependency**: the *exact* network primitive (Shared VPC vs
-peering, VPC connector vs Direct VPC) MUST mirror the existing
-`toolsname-agent-sidecar` Terraform. The planner reads that repo's
-`infra/modules/network/` (or equivalent) before scaffolding the module
-here. If that pattern is unavailable at scaffold time, the default is
-**Direct VPC egress + VPC peering** — the GCP-recommended modern path
-for new Cloud Run services that need cross-project private reachability
-without a Shared VPC org policy in place.
+**Locked decision (clarification 2026-04-28)**: the network primitive
+is **Direct VPC egress on Cloud Run + VPC peering** between the
+forecast project's VPC and the calling backend's VPC + Cloud NAT for
+non-Google outbound + Private Google Access for GCS / Secret Manager /
+the OIDC JWKS endpoint. This is GCP's modern recommended path for
+new Cloud Run services that need cross-project private reachability
+without a Shared VPC org policy in place. If `toolsname-agent-sidecar`
+turns out to use a different primitive (Serverless VPC Access
+connector, Shared VPC), reconciliation is a follow-up MR — not
+blocking v1.
 
 **Rationale**:
 - Single `pydantic-settings` loader for all envs eliminates a category

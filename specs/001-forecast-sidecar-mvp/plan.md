@@ -60,7 +60,10 @@ JSON to Cloud Logging, Sentry, and trace propagation mirror the existing
 **Constraints**:
 - Stateless service tier — no DB, no per-request disk writes
 - OIDC inbound on every endpoint except `/healthz` and `/readyz`
-- Cloud Run ingress = `internal` on staging + production; reachable only from the calling backend's VPC (FR-038, FR-039)
+- Cloud Run ingress = `internal` on staging + production, reached via **Direct VPC egress + VPC peering** (clarification 2026-04-28); Cloud NAT for non-Google outbound, Private Google Access for GCS/Secret Manager/JWKS (FR-038, FR-039)
+- `ALLOWED_CALLERS` MUST be non-empty in staging + production; service refuses to start otherwise; Terraform refuses to plan/apply if unset (FR-041)
+- Versions retained: 10 most-recent per `(company, CO)`; trainer prunes after successful promotion (FR-042)
+- Trainer queue concurrency cap: 5 (production), 2 (staging) (FR-043)
 - LightGBM `deterministic=True`, fixed `seed`, fixed `num_threads` (constitution Principle I)
 - One Docker image, two entrypoints (`uvicorn` for service, `python -m forecast_sidecar.train_cli` for job)
 - Inference identity: `roles/storage.objectViewer`; trainer identity: `roles/storage.objectAdmin` — no privilege overlap
@@ -112,7 +115,7 @@ the specific module / file / config that enforces it (e.g. Principle I →
 `seeds.py` + `manifest.py`; Principle II → `model/features.py`; etc.) so
 reviewers can spot drift without re-reading the constitution.
 
-**Operations & Infrastructure FRs (FR-031 → FR-040)**: re-evaluated
+**Operations & Infrastructure FRs (FR-031 → FR-043)**: re-evaluated
 against all five principles after their addition; no violations.
 - *Reproducibility (I)*: Terraform-managed everything (FR-031) plus
   immutable container tags (FR-035 production-deploy gate) plus
@@ -131,7 +134,10 @@ against all five principles after their addition; no violations.
 - *Configuration Over Code (V)*: strongly reinforced — three envs differ
   only in `terraform.tfvars` and Secret Manager contents (FR-032,
   FR-036). Code paths are identical across envs; no `if env == "prod"`
-  branches are permitted.
+  branches are permitted. Clarification additions FR-041 (allow-list
+  required in cloud envs), FR-042 (10-version retention), and FR-043
+  (queue concurrency cap 5/2) are all enforced through `terraform.tfvars`
+  + Terraform validation blocks, not in-code branches.
 
 The defense-in-depth requirement (FR-040 — OIDC still required from
 inside the VPC) does not interact with the constitution but is captured
